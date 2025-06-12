@@ -22,4 +22,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Smart Attendance"
-include(":app")
+include(":app");

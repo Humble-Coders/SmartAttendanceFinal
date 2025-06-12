@@ -1,11 +1,13 @@
 package com.humblecoders.smartattendance.presentation.navigation
 
-
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.humblecoders.smartattendance.presentation.screens.AttendanceMarkingScreen
+import com.humblecoders.smartattendance.presentation.screens.FaceRegistrationScreen
 import com.humblecoders.smartattendance.presentation.screens.HomeScreen
+import com.humblecoders.smartattendance.presentation.screens.ProfileScreen
 import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
@@ -27,12 +29,41 @@ fun AppNavigation(
                 bleViewModel = bleViewModel,
                 onProfileClick = {
                     navController.navigate(Screen.Profile.route)
+                },
+                onAttendanceClick = {
+                    navController.navigate(Screen.AttendanceMarking.route)
                 }
             )
         }
 
         composable(Screen.Profile.route) {
-            // Profile screen will be implemented next
+            ProfileScreen(
+                profileViewModel = profileViewModel,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onFaceRegistrationClick = {
+                    navController.navigate(Screen.FaceRegistration.route)
+                }
+            )
+        }
+
+        composable(Screen.FaceRegistration.route) {
+            FaceRegistrationScreen(
+                profileViewModel = profileViewModel,
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Screen.AttendanceMarking.route) {
+            AttendanceMarkingScreen(
+                attendanceViewModel = attendanceViewModel,
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
         }
     }
 }
@@ -40,4 +71,6 @@ fun AppNavigation(
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Profile : Screen("profile")
+    object FaceRegistration : Screen("face_registration")
+    object AttendanceMarking : Screen("attendance_marking")
 }

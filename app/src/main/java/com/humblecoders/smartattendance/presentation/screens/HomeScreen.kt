@@ -10,16 +10,53 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.humblecoders.smartattendance.data.repository.BleState
+import com.humblecoders.smartattendance.presentation.components.AttendanceConfirmationDialog
+import com.humblecoders.smartattendance.presentation.components.BluetoothPermissionHandler
 import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     bleViewModel: BleViewModel,
-    onProfileClick: () -> Unit
+    onProfileClick: () -> Unit,
+    onAttendanceClick: () -> Unit
 ) {
     val bleState by bleViewModel.bleState.collectAsState()
     val esp32DeviceFound by bleViewModel.esp32DeviceFound.collectAsState()
+    var showAttendanceDialog by remember { mutableStateOf(false) }
+
+    // Handle Bluetooth permissions
+    BluetoothPermissionHandler(
+        onPermissionsGranted = {
+            // Restart scanning after permissions are granted
+            bleViewModel.startScanning()
+        }
+    )
+
+    // Show attendance dialog when ESP32 is detected
+    LaunchedEffect(esp32DeviceFound) {
+        if (esp32DeviceFound) {
+            showAttendanceDialog = true
+        }
+    }
+
+    // Attendance Confirmation Dialog
+    if (showAttendanceDialog) {
+        AttendanceConfirmationDialog(
+            onConfirm = {
+                showAttendanceDialog = false
+                // Navigate to attendance marking
+                onAttendanceClick()
+                // Reset BLE detection
+                bleViewModel.resetDeviceFound()
+            },
+            onDismiss = {
+                showAttendanceDialog = false
+                // Reset BLE detection to continue scanning
+                bleViewModel.resetDeviceFound()
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -108,6 +145,19 @@ fun HomeScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center
             )
+
+            // Add manual permission request button if needed
+            if (bleState == BleState.NO_PERMISSION) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        // This will trigger permission request through the handler
+                        bleViewModel.startScanning()
+                    }
+                ) {
+                    Text("Grant Permissions")
+                }
+            }
         }
     }
 }
