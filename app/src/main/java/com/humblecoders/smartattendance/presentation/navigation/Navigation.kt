@@ -60,7 +60,6 @@ fun AppNavigation(
         composable(Screen.AttendanceMarking.route) {
             AttendanceMarkingScreen(
                 attendanceViewModel = attendanceViewModel,
-                bleViewModel = bleViewModel, // Pass BleViewModel for subject code access
                 onNavigateBack = {
                     navController.popBackStack()
                 }
