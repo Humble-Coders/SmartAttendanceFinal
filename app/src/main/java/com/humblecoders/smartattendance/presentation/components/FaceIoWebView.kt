@@ -266,7 +266,8 @@ private fun getFaceIoHtml(rollNumber: String): String {
                         payload: {
                             rollNumber: "$rollNumber"
                         },
-                        userConsent: false // Skip consent screen as we already have permission
+                        userConsent: false, // Skip consent screen as we already have permission
+                        enrollIntroTimeout: 15 // Timeout for enrollment intro
                     }).then(userInfo => {
                         log('Enrollment successful! FacialId: ' + userInfo.facialId);
                         statusDiv.innerHTML = 'Face registered successfully!';
@@ -316,8 +317,14 @@ private fun getFaceIoHtml(rollNumber: String): String {
                         17: "Origin not allowed",
                         18: "Country not allowed",
                         19: "Another session in progress",
-                        20: "Face already enrolled"
+                        20: "Face already enrolled",
+                        21: "Invalid PIN code. PIN must be 4-16 digits",
+                        22: "Weak PIN code. Please use a stronger PIN",
+                        23: "Invalid payload data"
                     };
+                    
+                    // Log the actual error code for debugging
+                    log('Face.io error code: ' + errCode);
                     
                     return errorMessages[errCode] || "Unknown error occurred (Code: " + errCode + ")";
                 }
