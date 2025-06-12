@@ -24,9 +24,7 @@ class BleViewModel(
         viewModelScope.launch {
             try {
                 bleRepository.initializeBle()
-                // Start scanning automatically when app launches
-                startScanning()
-                Timber.d("BLE ViewModel initialized and scanning started")
+                Timber.d("BLE ViewModel initialized")
             } catch (e: Exception) {
                 Timber.e(e, "Failed to initialize BLE in ViewModel")
             }
@@ -58,6 +56,21 @@ class BleViewModel(
     fun resetDeviceFound() {
         viewModelScope.launch {
             try {
+                // Reset the device found state but DON'T restart scanning
+                bleRepository.resetDeviceFound()
+                Timber.d("Device found state reset without restarting scan")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to reset device found state")
+            }
+        }
+    }
+
+    /**
+     * Reset device found and restart scanning (for when user confirms attendance)
+     */
+    fun resetDeviceFoundAndContinueScanning() {
+        viewModelScope.launch {
+            try {
                 // Reset the device found state and restart scanning
                 bleRepository.resetDeviceFound()
                 // Wait a bit before restarting scan to avoid rapid scanning
@@ -65,7 +78,7 @@ class BleViewModel(
                 bleRepository.startScanning()
                 Timber.d("Device found state reset and scanning restarted")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to reset device found state")
+                Timber.e(e, "Failed to reset device found state and restart scanning")
             }
         }
     }

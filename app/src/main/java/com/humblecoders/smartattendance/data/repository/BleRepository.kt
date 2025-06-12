@@ -25,6 +25,7 @@ class BleRepository(private val context: Context) {
     val subjectCode: StateFlow<String?> = _subjectCode.asStateFlow()
 
     private var central: BluetoothCentralManager? = null
+    private var isScanning = false
 
     fun initializeBle() {
         try {
@@ -42,22 +43,30 @@ class BleRepository(private val context: Context) {
             return
         }
 
+        if (isScanning) {
+            Timber.d("Already scanning, ignoring start request")
+            return
+        }
+
         central?.let { centralManager ->
             try {
-                _esp32DeviceFound.value = false
-                _subjectCode.value = null
+                // Clear previous detection state before starting new scan
+                clearDetectionState()
                 _bleState.value = BleState.SCANNING
+                isScanning = true
 
                 // Scan for peripherals with the specific name "Humble Coders"
-                // Use Set for blessed-kotlin
                 val deviceNames = arrayOf("Humble Coders")
                 centralManager.scanForPeripheralsWithNames(
                     peripheralNames = deviceNames,
                     resultCallback = { peripheral, scanResult ->
-                        handleDeviceDiscovered(peripheral, scanResult)
+                        if (isScanning) { // Only process results if we're still scanning
+                            handleDeviceDiscovered(peripheral, scanResult)
+                        }
                     },
                     scanError = { scanFailure ->
                         Timber.e("Scan failed with reason: $scanFailure")
+                        isScanning = false
                         _bleState.value = BleState.IDLE
                     }
                 )
@@ -65,6 +74,7 @@ class BleRepository(private val context: Context) {
                 Timber.d("Started scanning for devices with name: Humble Coders")
             } catch (e: Exception) {
                 Timber.e(e, "Failed to start scanning")
+                isScanning = false
                 _bleState.value = BleState.IDLE
             }
         } ?: run {
@@ -77,17 +87,26 @@ class BleRepository(private val context: Context) {
         central?.let { centralManager ->
             try {
                 centralManager.stopScan()
+                isScanning = false
                 _bleState.value = BleState.IDLE
-                _esp32DeviceFound.value = false
-                _subjectCode.value = null
-                Timber.d("Stopped scanning")
+                // Clear detection state when stopping scan
+                clearDetectionState()
+                Timber.d("Stopped scanning and cleared detection state")
             } catch (e: Exception) {
                 Timber.e(e, "Failed to stop scanning")
+                isScanning = false
+                _bleState.value = BleState.IDLE
             }
         }
     }
 
     private fun handleDeviceDiscovered(peripheral: BluetoothPeripheral, scanResult: ScanResult) {
+        // Double check we're still scanning to prevent stale callbacks
+        if (!isScanning) {
+            Timber.d("Ignoring device discovery - not currently scanning")
+            return
+        }
+
         val deviceName = peripheral.name
         Timber.d("Discovered device: $deviceName, RSSI: ${scanResult.rssi}")
 
@@ -159,21 +178,33 @@ class BleRepository(private val context: Context) {
                 }
             }
 
-            // Update state
-            _subjectCode.value = extractedSubjectCode ?: "UNKNOWN"
-            _esp32DeviceFound.value = true
-            _bleState.value = BleState.DEVICE_FOUND
+            // Only update state if we're still scanning
+            if (isScanning) {
+                // Stop scanning when device is found to prevent multiple detections
+                central?.stopScan()
+                isScanning = false
 
-            Timber.i("ESP32 attendance device detected! Subject code: ${_subjectCode.value}")
+                // Update state
+                _subjectCode.value = extractedSubjectCode ?: "UNKNOWN"
+                _esp32DeviceFound.value = true
+                _bleState.value = BleState.DEVICE_FOUND
+
+                Timber.i("ESP32 attendance device detected! Subject code: ${_subjectCode.value}")
+            }
         }
     }
 
     fun resetDeviceFound() {
-        _esp32DeviceFound.value = false
-        _subjectCode.value = null
+        clearDetectionState()
         if (_bleState.value == BleState.DEVICE_FOUND) {
             _bleState.value = BleState.IDLE
         }
+        Timber.d("Device found state reset")
+    }
+
+    private fun clearDetectionState() {
+        _esp32DeviceFound.value = false
+        _subjectCode.value = null
     }
 
     private fun hasRequiredPermissions(): Boolean {

@@ -27,6 +27,7 @@ fun AppNavigation(
         composable(Screen.Home.route) {
             HomeScreen(
                 bleViewModel = bleViewModel,
+                profileViewModel = profileViewModel,
                 onProfileClick = {
                     navController.navigate(Screen.Profile.route)
                 },
