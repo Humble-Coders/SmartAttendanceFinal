@@ -44,9 +44,5 @@ class ProfileRepository(private val context: Context) {
     }
 
     // Clear all profile data
-    suspend fun clearProfile() {
-        context.dataStore.edit { preferences ->
-            preferences.clear()
-        }
-    }
+
 }

@@ -110,73 +110,23 @@ class ProfileViewModel(
      * Delete all faces - resets face registration status in the app
      * This should be called after Face.io deletion is complete
      */
-    fun deleteAllFaces(onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
-        viewModelScope.launch {
-            _isDeleting.value = true
-            try {
-                // Reset face registration status in local storage
-                profileRepository.updateFaceRegistrationStatus(false)
 
-                Timber.i("All face data deleted successfully")
-                onSuccess()
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to delete face data")
-                onError("Failed to delete faces: ${e.message}")
-            } finally {
-                _isDeleting.value = false
-            }
-        }
-    }
 
     /**
      * Complete profile reset - clears all data including name and roll number
      * Use this for complete app reset
      */
-    fun resetCompleteProfile(onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
-        viewModelScope.launch {
-            _isDeleting.value = true
-            try {
-                // Clear all profile data from DataStore
-                profileRepository.clearProfile()
 
-                // Reset form inputs
-                _nameInput.value = ""
-                _rollNumberInput.value = ""
-
-                Timber.i("Complete profile reset successful")
-                onSuccess()
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to reset complete profile")
-                onError("Failed to reset profile: ${e.message}")
-            } finally {
-                _isDeleting.value = false
-            }
-        }
-    }
 
     /**
      * Quick face reset - only resets face registration, keeps profile data
      * Good for testing face registration repeatedly
      */
-    fun quickFaceReset(onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
-        viewModelScope.launch {
-            try {
-                profileRepository.updateFaceRegistrationStatus(false)
-                Timber.d("Quick face reset completed")
-                onSuccess()
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to perform quick face reset")
-                onError("Failed to reset face: ${e.message}")
-            }
-        }
-    }
 
     /**
      * Check if any face data exists
      */
-    fun hasFaceData(): Boolean {
-        return profileData.value.isFaceRegistered
-    }
+
 
     /**
      * Get current profile summary for logging/debugging
