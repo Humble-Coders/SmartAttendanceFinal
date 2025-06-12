@@ -30,12 +30,31 @@ class ProfileViewModel(
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
 
+    // Track if we've initialized the form inputs
+    private val _isFormInitialized = MutableStateFlow(false)
+    val isFormInitialized: StateFlow<Boolean> = _isFormInitialized.asStateFlow()
+
+    // Track if profile is saved (for validation)
+    val isProfileSaved: StateFlow<Boolean> = profileData
+        .map { it.name.isNotBlank() && it.rollNumber.isNotBlank() }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+
     init {
-        // Load existing profile data into input fields
+        // Initialize form inputs only once when ViewModel is created
+        initializeFormInputs()
+    }
+
+    private fun initializeFormInputs() {
         viewModelScope.launch {
-            profileData.collect { profile ->
+            // Take only the first emission to initialize the form
+            profileData.take(1).collect { profile ->
                 _nameInput.value = profile.name
                 _rollNumberInput.value = profile.rollNumber
+                _isFormInitialized.value = true
             }
         }
     }
@@ -48,15 +67,22 @@ class ProfileViewModel(
         _rollNumberInput.value = rollNumber
     }
 
-    fun saveProfile(onSuccess: () -> Unit) {
+    fun saveProfile(onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
         viewModelScope.launch {
+            if (_nameInput.value.isBlank() || _rollNumberInput.value.isBlank()) {
+                onError("Please fill in all fields")
+                return@launch
+            }
+
             _isSaving.value = true
             try {
                 profileRepository.saveProfile(
-                    name = _nameInput.value,
-                    rollNumber = _rollNumberInput.value
+                    name = _nameInput.value.trim(),
+                    rollNumber = _rollNumberInput.value.trim()
                 )
                 onSuccess()
+            } catch (e: Exception) {
+                onError("Failed to save profile: ${e.message}")
             } finally {
                 _isSaving.value = false
             }
@@ -65,7 +91,29 @@ class ProfileViewModel(
 
     fun updateFaceRegistrationStatus(isRegistered: Boolean) {
         viewModelScope.launch {
-            profileRepository.updateFaceRegistrationStatus(isRegistered)
+            try {
+                profileRepository.updateFaceRegistrationStatus(isRegistered)
+            } catch (e: Exception) {
+                // Handle error if needed
+            }
         }
+    }
+
+    // Method to reload form inputs if needed (optional)
+    fun reloadFormInputs() {
+        viewModelScope.launch {
+            val currentProfile = profileData.first()
+            _nameInput.value = currentProfile.name
+            _rollNumberInput.value = currentProfile.rollNumber
+        }
+    }
+
+    // Validation helpers
+    fun isFormValid(): Boolean {
+        return _nameInput.value.isNotBlank() && _rollNumberInput.value.isNotBlank()
+    }
+
+    fun canRegisterFace(): Boolean {
+        return isProfileSaved.value
     }
 }

@@ -1,6 +1,8 @@
 package com.humblecoders.smartattendance.presentation.components
 
 import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
 import android.webkit.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -35,7 +37,6 @@ fun FaceIoAuthWebView(
 
                 webViewClient = WebViewClient()
 
-                // Set WebChromeClient to handle camera permissions
                 webChromeClient = object : WebChromeClient() {
                     override fun onPermissionRequest(request: PermissionRequest?) {
                         request?.let { permissionRequest ->
@@ -59,7 +60,7 @@ fun FaceIoAuthWebView(
                     }
                 }
 
-                // Add JavaScript interface for communication
+                // Add JavaScript interface for communication with thread safety
                 addJavascriptInterface(
                     FaceIoAuthJsInterface(
                         onAuthenticated = onAuthenticated,
@@ -68,7 +69,6 @@ fun FaceIoAuthWebView(
                     "AndroidInterface"
                 )
 
-                // Load Face.io authentication HTML
                 loadDataWithBaseURL(
                     "https://localhost",
                     getFaceIoAuthHtml(),
@@ -87,16 +87,32 @@ class FaceIoAuthJsInterface(
     private val onAuthenticated: (rollNumber: String) -> Unit,
     private val onError: (String) -> Unit
 ) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     @JavascriptInterface
     fun onAuthenticated(rollNumber: String) {
         Timber.d("User authenticated with roll number: $rollNumber")
-        onAuthenticated(rollNumber)
+        // Use Handler to ensure execution on main thread
+        mainHandler.post {
+            try {
+                onAuthenticated(rollNumber)
+            } catch (e: Exception) {
+                Timber.e(e, "Error in onAuthenticated callback")
+            }
+        }
     }
 
     @JavascriptInterface
     fun onError(error: String) {
         Timber.e("Authentication error: $error")
-        onError(error)
+        // Use Handler to ensure execution on main thread
+        mainHandler.post {
+            try {
+                onError(error)
+            } catch (e: Exception) {
+                Timber.e(e, "Error in onError callback")
+            }
+        }
     }
 
     @JavascriptInterface
@@ -172,7 +188,6 @@ private fun getFaceIoAuthHtml(): String {
             </style>
         </head>
         <body>
-            <!-- FACEIO Widget will be injected here -->
             <div id="faceio-modal"></div>
             
             <div class="container">
@@ -182,36 +197,52 @@ private fun getFaceIoAuthHtml(): String {
                 <button id="startButton" class="button" style="display: none;">Start Face Scan</button>
             </div>
             
-            <!-- Load Face.io JavaScript library -->
             <script src="https://cdn.faceio.net/fio.js"></script>
             
             <script type="text/javascript">
-                // Helper function to log to Android
                 function log(message) {
                     console.log(message);
                     if (window.AndroidInterface && window.AndroidInterface.log) {
-                        window.AndroidInterface.log(message);
+                        try {
+                            window.AndroidInterface.log(message);
+                        } catch (e) {
+                            console.error('Error calling AndroidInterface.log:', e);
+                        }
                     }
+                }
+                
+                // Safe callback function with delayed execution
+                function safeCallback(callbackName, data, delay = 100) {
+                    setTimeout(() => {
+                        try {
+                            if (window.AndroidInterface && window.AndroidInterface[callbackName]) {
+                                log('Calling ' + callbackName + ' with data: ' + data);
+                                window.AndroidInterface[callbackName](data);
+                            } else {
+                                log('AndroidInterface.' + callbackName + ' not available');
+                            }
+                        } catch (error) {
+                            log('Error calling ' + callbackName + ': ' + error.message);
+                            console.error('Callback error:', error);
+                        }
+                    }, delay);
                 }
                 
                 let faceio = null;
                 const statusDiv = document.getElementById('status');
                 const startButton = document.getElementById('startButton');
                 
-                // Initialize Face.io when page loads
                 window.addEventListener('load', function() {
                     log('Page loaded, initializing Face.io for authentication...');
                     
                     setTimeout(function() {
                         try {
-                            // Initialize Face.io with your Public ID
                             faceio = new faceIO('fioa264a');
                             log('Face.io initialized successfully');
                             
                             statusDiv.innerHTML = 'Face.io ready. Click button to scan face.';
                             statusDiv.className = 'status loading';
                             
-                            // Show start button
                             startButton.style.display = 'block';
                             startButton.addEventListener('click', startAuthentication);
                             
@@ -220,9 +251,7 @@ private fun getFaceIoAuthHtml(): String {
                             statusDiv.innerHTML = 'Failed to initialize Face.io: ' + error.message;
                             statusDiv.className = 'status error';
                             
-                            if (window.AndroidInterface) {
-                                window.AndroidInterface.onError('Initialization failed: ' + error.message);
-                            }
+                            safeCallback('onError', 'Initialization failed: ' + error.message);
                         }
                     }, 2000);
                 });
@@ -233,7 +262,6 @@ private fun getFaceIoAuthHtml(): String {
                     statusDiv.innerHTML = 'Scanning face...';
                     statusDiv.className = 'status loading';
                     
-                    // Small delay before starting authentication
                     setTimeout(function() {
                         authenticateUser();
                     }, 500);
@@ -255,16 +283,13 @@ private fun getFaceIoAuthHtml(): String {
                         log('Authentication successful!');
                         log('Payload: ' + JSON.stringify(userData.payload));
                         
-                        // Extract roll number from payload
                         const rollNumber = userData.payload ? userData.payload.rollNumber : 'Unknown';
                         
                         statusDiv.innerHTML = 'Face recognized! Roll Number: ' + rollNumber;
                         statusDiv.className = 'status success';
                         
-                        // Send roll number to Android
-                        if (window.AndroidInterface) {
-                            window.AndroidInterface.onAuthenticated(rollNumber);
-                        }
+                        // Use safe callback with delay
+                        safeCallback('onAuthenticated', rollNumber, 200);
                         
                     }).catch(errCode => {
                         log('Authentication failed with error code: ' + errCode);
@@ -272,19 +297,15 @@ private fun getFaceIoAuthHtml(): String {
                         statusDiv.innerHTML = 'Error: ' + errorMessage;
                         statusDiv.className = 'status error';
                         
-                        // Show retry button
                         startButton.textContent = 'Try Again';
                         startButton.style.display = 'block';
                         
-                        // Send error to Android
-                        if (window.AndroidInterface) {
-                            window.AndroidInterface.onError(errorMessage);
-                        }
+                        // Use safe callback with delay
+                        safeCallback('onError', errorMessage, 200);
                     });
                 }
                 
                 function handleError(errCode) {
-                    // Map Face.io error codes to user-friendly messages
                     const errorMessages = {
                         1: "Camera permission denied",
                         2: "No face detected. Please position your face in the camera",
@@ -302,6 +323,7 @@ private fun getFaceIoAuthHtml(): String {
                         15: "Too many requests. Please wait a moment"
                     };
                     
+                    log('Face.io error code: ' + errCode);
                     return errorMessages[errCode] || "Unknown error occurred (Code: " + errCode + ")";
                 }
             </script>

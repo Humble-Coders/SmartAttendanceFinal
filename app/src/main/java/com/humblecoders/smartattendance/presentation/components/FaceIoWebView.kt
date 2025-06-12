@@ -1,6 +1,8 @@
 package com.humblecoders.smartattendance.presentation.components
 
 import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
 import android.webkit.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -29,7 +31,6 @@ fun FaceIoWebView(
                     mediaPlaybackRequiresUserGesture = false
                     allowFileAccess = true
                     allowContentAccess = true
-                    // Additional settings for camera access
                     allowFileAccessFromFileURLs = true
                     allowUniversalAccessFromFileURLs = true
                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
@@ -37,23 +38,18 @@ fun FaceIoWebView(
 
                 webViewClient = WebViewClient()
 
-                // Set WebChromeClient to handle camera permissions
                 webChromeClient = object : WebChromeClient() {
                     override fun onPermissionRequest(request: PermissionRequest?) {
                         request?.let { permissionRequest ->
-                            // Log the requested permissions
                             Timber.d("WebView permission request: ${permissionRequest.resources.joinToString()}")
 
-                            // Check if camera permission is requested
                             val requestedResources = permissionRequest.resources
                             val cameraPermission = PermissionRequest.RESOURCE_VIDEO_CAPTURE
 
                             if (requestedResources.contains(cameraPermission)) {
-                                // Grant camera permission to WebView
                                 permissionRequest.grant(arrayOf(cameraPermission))
                                 Timber.d("Camera permission granted to WebView")
                             } else {
-                                // Grant all requested permissions (might include audio)
                                 permissionRequest.grant(requestedResources)
                             }
                         }
@@ -67,7 +63,7 @@ fun FaceIoWebView(
                     }
                 }
 
-                // Add JavaScript interface for communication
+                // Add JavaScript interface for communication with thread safety
                 addJavascriptInterface(
                     FaceIoJsInterface(
                         onFaceRegistered = onFaceRegistered,
@@ -76,7 +72,6 @@ fun FaceIoWebView(
                     "AndroidInterface"
                 )
 
-                // Load Face.io HTML with proper origin
                 loadDataWithBaseURL(
                     "https://localhost",
                     getFaceIoHtml(rollNumber),
@@ -87,9 +82,6 @@ fun FaceIoWebView(
 
                 webView.value = this
             }
-        },
-        update = { webView ->
-            // Cleanup when composable is disposed
         }
     )
 }
@@ -98,16 +90,32 @@ class FaceIoJsInterface(
     private val onFaceRegistered: (String) -> Unit,
     private val onError: (String) -> Unit
 ) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     @JavascriptInterface
     fun onFaceRegistered(faceId: String) {
         Timber.d("Face registered with ID: $faceId")
-        onFaceRegistered(faceId)
+        // Use Handler to ensure execution on main thread
+        mainHandler.post {
+            try {
+                onFaceRegistered(faceId)
+            } catch (e: Exception) {
+                Timber.e(e, "Error in onFaceRegistered callback")
+            }
+        }
     }
 
     @JavascriptInterface
     fun onError(error: String) {
         Timber.e("Face registration error: $error")
-        onError(error)
+        // Use Handler to ensure execution on main thread
+        mainHandler.post {
+            try {
+                onError(error)
+            } catch (e: Exception) {
+                Timber.e(e, "Error in onError callback")
+            }
+        }
     }
 
     @JavascriptInterface
@@ -183,7 +191,6 @@ private fun getFaceIoHtml(rollNumber: String): String {
             </style>
         </head>
         <body>
-            <!-- FACEIO Widget will be injected here -->
             <div id="faceio-modal"></div>
             
             <div class="container">
@@ -194,36 +201,52 @@ private fun getFaceIoHtml(rollNumber: String): String {
                 <button id="startButton" class="button" style="display: none;">Start Face Registration</button>
             </div>
             
-            <!-- Load Face.io JavaScript library -->
             <script src="https://cdn.faceio.net/fio.js"></script>
             
             <script type="text/javascript">
-                // Helper function to log to Android
                 function log(message) {
                     console.log(message);
                     if (window.AndroidInterface && window.AndroidInterface.log) {
-                        window.AndroidInterface.log(message);
+                        try {
+                            window.AndroidInterface.log(message);
+                        } catch (e) {
+                            console.error('Error calling AndroidInterface.log:', e);
+                        }
                     }
+                }
+                
+                // Safe callback function with delayed execution
+                function safeCallback(callbackName, data, delay = 100) {
+                    setTimeout(() => {
+                        try {
+                            if (window.AndroidInterface && window.AndroidInterface[callbackName]) {
+                                log('Calling ' + callbackName + ' with data: ' + data);
+                                window.AndroidInterface[callbackName](data);
+                            } else {
+                                log('AndroidInterface.' + callbackName + ' not available');
+                            }
+                        } catch (error) {
+                            log('Error calling ' + callbackName + ': ' + error.message);
+                            console.error('Callback error:', error);
+                        }
+                    }, delay);
                 }
                 
                 let faceio = null;
                 const statusDiv = document.getElementById('status');
                 const startButton = document.getElementById('startButton');
                 
-                // Initialize Face.io when page loads
                 window.addEventListener('load', function() {
                     log('Page loaded, initializing Face.io...');
                     
                     setTimeout(function() {
                         try {
-                            // Initialize Face.io with your Public ID
                             faceio = new faceIO('fioa264a');
                             log('Face.io initialized successfully');
                             
                             statusDiv.innerHTML = 'Face.io ready. Click button to start.';
                             statusDiv.className = 'status loading';
                             
-                            // Show start button
                             startButton.style.display = 'block';
                             startButton.addEventListener('click', startEnrollment);
                             
@@ -232,9 +255,7 @@ private fun getFaceIoHtml(rollNumber: String): String {
                             statusDiv.innerHTML = 'Failed to initialize Face.io: ' + error.message;
                             statusDiv.className = 'status error';
                             
-                            if (window.AndroidInterface) {
-                                window.AndroidInterface.onError('Initialization failed: ' + error.message);
-                            }
+                            safeCallback('onError', 'Initialization failed: ' + error.message);
                         }
                     }, 2000);
                 });
@@ -245,7 +266,6 @@ private fun getFaceIoHtml(rollNumber: String): String {
                     statusDiv.innerHTML = 'Starting face enrollment...';
                     statusDiv.className = 'status loading';
                     
-                    // Small delay before starting enrollment
                     setTimeout(function() {
                         enrollNewUser();
                     }, 500);
@@ -266,17 +286,15 @@ private fun getFaceIoHtml(rollNumber: String): String {
                         payload: {
                             rollNumber: "$rollNumber"
                         },
-                        userConsent: false, // Skip consent screen as we already have permission
-                        enrollIntroTimeout: 15 // Timeout for enrollment intro
+                        userConsent: false,
+                        enrollIntroTimeout: 15
                     }).then(userInfo => {
                         log('Enrollment successful! FacialId: ' + userInfo.facialId);
                         statusDiv.innerHTML = 'Face registered successfully!';
                         statusDiv.className = 'status success';
                         
-                        // Send success to Android
-                        if (window.AndroidInterface) {
-                            window.AndroidInterface.onFaceRegistered(userInfo.facialId);
-                        }
+                        // Use safe callback with delay
+                        safeCallback('onFaceRegistered', userInfo.facialId, 200);
                         
                     }).catch(errCode => {
                         log('Enrollment failed with error code: ' + errCode);
@@ -284,19 +302,15 @@ private fun getFaceIoHtml(rollNumber: String): String {
                         statusDiv.innerHTML = 'Error: ' + errorMessage;
                         statusDiv.className = 'status error';
                         
-                        // Show retry button
                         startButton.textContent = 'Try Again';
                         startButton.style.display = 'block';
                         
-                        // Send error to Android
-                        if (window.AndroidInterface) {
-                            window.AndroidInterface.onError(errorMessage);
-                        }
+                        // Use safe callback with delay
+                        safeCallback('onError', errorMessage, 200);
                     });
                 }
                 
                 function handleError(errCode) {
-                    // Map Face.io error codes to user-friendly messages
                     const errorMessages = {
                         1: "Camera permission denied. Please ensure camera access is granted.",
                         2: "No face detected. Please position your face in the camera",
@@ -323,9 +337,7 @@ private fun getFaceIoHtml(rollNumber: String): String {
                         23: "Invalid payload data"
                     };
                     
-                    // Log the actual error code for debugging
                     log('Face.io error code: ' + errCode);
-                    
                     return errorMessages[errCode] || "Unknown error occurred (Code: " + errCode + ")";
                 }
             </script>
