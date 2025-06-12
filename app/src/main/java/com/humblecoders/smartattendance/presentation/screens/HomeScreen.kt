@@ -3,10 +3,12 @@ package com.humblecoders.smartattendance.presentation.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.humblecoders.smartattendance.data.repository.BleState
@@ -23,13 +25,14 @@ fun HomeScreen(
 ) {
     val bleState by bleViewModel.bleState.collectAsState()
     val esp32DeviceFound by bleViewModel.esp32DeviceFound.collectAsState()
+    val subjectCode by bleViewModel.subjectCode.collectAsState()
     var showAttendanceDialog by remember { mutableStateOf(false) }
 
     // Handle Bluetooth permissions
     BluetoothPermissionHandler(
         onPermissionsGranted = {
             // Restart scanning after permissions are granted
-            bleViewModel.startScanning()
+            bleViewModel.restartScanning()
         }
     )
 
@@ -40,9 +43,10 @@ fun HomeScreen(
         }
     }
 
-    // Attendance Confirmation Dialog
+    // Enhanced Attendance Confirmation Dialog with Subject Code
     if (showAttendanceDialog) {
         AttendanceConfirmationDialog(
+            subjectCode = subjectCode ?: "Unknown Subject",
             onConfirm = {
                 showAttendanceDialog = false
                 // Navigate to attendance marking
@@ -63,6 +67,18 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Smart Attendance") },
                 actions = {
+                    // Refresh button for manual scan restart
+                    IconButton(
+                        onClick = {
+                            bleViewModel.restartScanning()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Restart Scan"
+                        )
+                    }
+
                     IconButton(onClick = onProfileClick) {
                         Icon(
                             imageVector = Icons.Default.Person,
@@ -79,16 +95,51 @@ fun HomeScreen(
                 .padding(paddingValues)
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Welcome Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "📡",
+                        style = MaterialTheme.typography.displayLarge
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Smart Attendance System",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text = "Automatic attendance via BLE detection",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+
             // BLE Status Card
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = when (bleState) {
-                        BleState.SCANNING -> MaterialTheme.colorScheme.primaryContainer
+                        BleState.SCANNING -> MaterialTheme.colorScheme.secondaryContainer
                         BleState.DEVICE_FOUND -> MaterialTheme.colorScheme.tertiaryContainer
                         BleState.BLUETOOTH_OFF -> MaterialTheme.colorScheme.errorContainer
                         BleState.NO_PERMISSION -> MaterialTheme.colorScheme.errorContainer
@@ -99,63 +150,153 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Status Icon
+                    Text(
+                        text = when (bleState) {
+                            BleState.SCANNING -> "🔍"
+                            BleState.DEVICE_FOUND -> "✅"
+                            BleState.BLUETOOTH_OFF -> "📴"
+                            BleState.NO_PERMISSION -> "⚠️"
+                            else -> "⚪"
+                        },
+                        style = MaterialTheme.typography.displaySmall
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     Text(
                         text = "BLE Status",
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
                         text = when (bleState) {
-                            BleState.IDLE -> "Idle"
-                            BleState.SCANNING -> "Scanning..."
-                            BleState.DEVICE_FOUND -> "Signal Found!"
-                            BleState.BLUETOOTH_OFF -> "Bluetooth is OFF"
-                            BleState.NO_PERMISSION -> "Permission Required"
+                            BleState.IDLE -> "Ready to scan"
+                            BleState.SCANNING -> "Scanning for devices..."
+                            BleState.DEVICE_FOUND -> "Attendance device detected!"
+                            BleState.BLUETOOTH_OFF -> "Bluetooth is disabled"
+                            BleState.NO_PERMISSION -> "Permission required"
                         },
                         style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        fontWeight = if (bleState == BleState.DEVICE_FOUND) FontWeight.Medium else FontWeight.Normal
                     )
 
+                    // Show scanning animation
                     if (bleState == BleState.SCANNING) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+
+                    // Show subject code when device is found
+                    if (bleState == BleState.DEVICE_FOUND && subjectCode != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Subject Code",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = subjectCode!!,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Instructions Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Text(
+                        text = "How it works:",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val instructions = listOf(
+                        "📍 Keep Bluetooth enabled",
+                        "🔍 App continuously scans for attendance devices",
+                        "📱 When detected, confirm to mark attendance",
+                        "😊 Face verification completes the process"
+                    )
+
+                    instructions.forEach { instruction ->
+                        Text(
+                            text = instruction,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 2.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
-            // Status Message
-            Text(
-                text = when {
-                    esp32DeviceFound -> "Attendance device detected!"
-                    bleState == BleState.SCANNING -> "Looking for attendance device..."
-                    bleState == BleState.BLUETOOTH_OFF -> "Please turn on Bluetooth"
-                    bleState == BleState.NO_PERMISSION -> "Please grant Bluetooth permissions"
-                    else -> "Ready to scan"
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center
-            )
-
-            // Add manual permission request button if needed
-            if (bleState == BleState.NO_PERMISSION) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        // This will trigger permission request through the handler
-                        bleViewModel.startScanning()
+            // Action Buttons
+            when (bleState) {
+                BleState.NO_PERMISSION -> {
+                    Button(
+                        onClick = {
+                            bleViewModel.restartScanning()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant Bluetooth Permissions")
                     }
-                ) {
-                    Text("Grant Permissions")
+                }
+                BleState.BLUETOOTH_OFF -> {
+                    OutlinedButton(
+                        onClick = {
+                            // Note: In a real app, you might want to guide user to settings
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Enable Bluetooth in Settings")
+                    }
+                }
+                else -> {
+                    // Manual attendance button (optional)
+                    OutlinedButton(
+                        onClick = onAttendanceClick,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Mark Attendance Manually")
+                    }
                 }
             }
         }

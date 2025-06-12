@@ -1,6 +1,5 @@
 package com.humblecoders.smartattendance.presentation.screens
 
-
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -8,17 +7,20 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.humblecoders.smartattendance.presentation.components.CameraPermissionHandler
 import com.humblecoders.smartattendance.presentation.components.FaceIoAuthWebView
 import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewModel
+import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AttendanceMarkingScreen(
     attendanceViewModel: AttendanceViewModel,
+    bleViewModel: BleViewModel,
     onNavigateBack: () -> Unit
 ) {
     var showSuccess by remember { mutableStateOf(false) }
@@ -26,6 +28,9 @@ fun AttendanceMarkingScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var hasCameraPermission by remember { mutableStateOf(false) }
     var permissionDenied by remember { mutableStateOf(false) }
+
+    // Get subject code from BLE detection
+    val subjectCode by bleViewModel.subjectCode.collectAsState()
 
     // Handle camera permission
     CameraPermissionHandler(
@@ -41,7 +46,18 @@ fun AttendanceMarkingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Mark Attendance") },
+                title = {
+                    Column {
+                        Text("Mark Attendance")
+                        subjectCode?.let { code ->
+                            Text(
+                                text = "Subject: $code",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
@@ -84,6 +100,7 @@ fun AttendanceMarkingScreen(
                     // Show success message
                     AttendanceSuccessContent(
                         message = successMessage,
+                        subjectCode = subjectCode,
                         onDone = onNavigateBack
                     )
                 }
@@ -91,6 +108,7 @@ fun AttendanceMarkingScreen(
                     // Show error message
                     AttendanceErrorContent(
                         errorMessage = errorMessage!!,
+                        subjectCode = subjectCode,
                         onRetry = {
                             errorMessage = null
                         },
@@ -98,26 +116,77 @@ fun AttendanceMarkingScreen(
                     )
                 }
                 else -> {
-                    // Show Face.io authentication WebView
-                    FaceIoAuthWebView(
-                        modifier = Modifier.fillMaxSize(),
-                        onAuthenticated = { rollNumber ->
-                            // Mark attendance for this roll number
-                            attendanceViewModel.markAttendance(
-                                rollNumber = rollNumber,
-                                onSuccess = {
-                                    successMessage = "Attendance marked for Roll No: $rollNumber"
-                                    showSuccess = true
+                    // Show instruction before face scanning
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        // Subject info card
+                        subjectCode?.let { code ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "📚",
+                                        style = MaterialTheme.typography.displayMedium
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Marking Attendance For",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = code,
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+                        }
+
+                        // Face.io authentication WebView
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        ) {
+                            FaceIoAuthWebView(
+                                modifier = Modifier.fillMaxSize(),
+                                onAuthenticated = { rollNumber ->
+                                    // Mark attendance for this roll number with subject code
+                                    attendanceViewModel.markAttendance(
+                                        rollNumber = rollNumber,
+                                        subjectCode = subjectCode ?: "Unknown",
+                                        onSuccess = {
+                                            successMessage = "Attendance marked for Roll No: $rollNumber"
+                                            showSuccess = true
+                                        },
+                                        onError = { error ->
+                                            errorMessage = error
+                                        }
+                                    )
                                 },
                                 onError = { error ->
                                     errorMessage = error
                                 }
                             )
-                        },
-                        onError = { error ->
-                            errorMessage = error
                         }
-                    )
+                    }
                 }
             }
         }
@@ -180,6 +249,7 @@ private fun PermissionDeniedContent(
 @Composable
 private fun AttendanceSuccessContent(
     message: String,
+    subjectCode: String?,
     onDone: () -> Unit
 ) {
     LaunchedEffect(Unit) {
@@ -204,7 +274,7 @@ private fun AttendanceSuccessContent(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "✓",
+                    text = "✅",
                     style = MaterialTheme.typography.displayLarge,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -213,7 +283,8 @@ private fun AttendanceSuccessContent(
 
                 Text(
                     text = "Attendance Marked!",
-                    style = MaterialTheme.typography.headlineSmall
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -223,6 +294,24 @@ private fun AttendanceSuccessContent(
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center
                 )
+
+                subjectCode?.let { code ->
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Divider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.3f)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Subject: $code",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -240,6 +329,7 @@ private fun AttendanceSuccessContent(
 @Composable
 private fun AttendanceErrorContent(
     errorMessage: String,
+    subjectCode: String?,
     onRetry: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -260,7 +350,7 @@ private fun AttendanceErrorContent(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "⚠",
+                    text = "❌",
                     style = MaterialTheme.typography.displayLarge,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -269,10 +359,20 @@ private fun AttendanceErrorContent(
 
                 Text(
                     text = "Attendance Failed",
-                    style = MaterialTheme.typography.headlineSmall
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                subjectCode?.let { code ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Subject: $code",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
                     text = errorMessage,

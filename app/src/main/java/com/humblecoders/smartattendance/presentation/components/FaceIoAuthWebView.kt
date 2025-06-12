@@ -2,10 +2,13 @@ package com.humblecoders.smartattendance.presentation.components
 
 import android.annotation.SuppressLint
 import android.webkit.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import timber.log.Timber
 
@@ -16,76 +19,110 @@ fun FaceIoAuthWebView(
     onAuthenticated: (rollNumber: String) -> Unit,
     onError: (String) -> Unit
 ) {
-    val webView = remember { mutableStateOf<WebView?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var loadingMessage by remember { mutableStateOf("Initializing Face.io...") }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            WebView(context).apply {
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    mediaPlaybackRequiresUserGesture = false
-                    allowFileAccess = true
-                    allowContentAccess = true
-                    allowFileAccessFromFileURLs = true
-                    allowUniversalAccessFromFileURLs = true
-                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                }
+    Box(modifier = modifier) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context ->
+                WebView(context).apply {
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        mediaPlaybackRequiresUserGesture = false
+                        allowFileAccess = true
+                        allowContentAccess = true
+                        allowFileAccessFromFileURLs = true
+                        allowUniversalAccessFromFileURLs = true
+                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    }
 
-                webViewClient = WebViewClient()
+                    webViewClient = WebViewClient()
 
-                // Set WebChromeClient to handle camera permissions
-                webChromeClient = object : WebChromeClient() {
-                    override fun onPermissionRequest(request: PermissionRequest?) {
-                        request?.let { permissionRequest ->
-                            val requestedResources = permissionRequest.resources
-                            val cameraPermission = PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                    // Set WebChromeClient to handle camera permissions
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onPermissionRequest(request: PermissionRequest?) {
+                            request?.let { permissionRequest ->
+                                val requestedResources = permissionRequest.resources
+                                val cameraPermission = PermissionRequest.RESOURCE_VIDEO_CAPTURE
 
-                            if (requestedResources.contains(cameraPermission)) {
-                                permissionRequest.grant(arrayOf(cameraPermission))
-                                Timber.d("Camera permission granted to WebView for authentication")
-                            } else {
-                                permissionRequest.grant(requestedResources)
+                                if (requestedResources.contains(cameraPermission)) {
+                                    permissionRequest.grant(arrayOf(cameraPermission))
+                                    Timber.d("Camera permission granted to WebView for authentication")
+                                } else {
+                                    permissionRequest.grant(requestedResources)
+                                }
                             }
                         }
-                    }
 
-                    override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                        consoleMessage?.let {
-                            Timber.d("Auth WebView Console: ${it.message()}")
+                        override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                            consoleMessage?.let {
+                                Timber.d("Auth WebView Console: ${it.message()}")
+                            }
+                            return super.onConsoleMessage(consoleMessage)
                         }
-                        return super.onConsoleMessage(consoleMessage)
                     }
+
+                    // Add JavaScript interface for communication
+                    addJavascriptInterface(
+                        FaceIoAuthJsInterface(
+                            onAuthenticated = onAuthenticated,
+                            onError = onError,
+                            onLoadingStateChange = { loading, message ->
+                                isLoading = loading
+                                loadingMessage = message
+                            }
+                        ),
+                        "AndroidInterface"
+                    )
+
+                    // Load Face.io authentication HTML
+                    loadDataWithBaseURL(
+                        "https://localhost",
+                        getEnhancedFaceIoAuthHtml(),
+                        "text/html",
+                        "UTF-8",
+                        null
+                    )
                 }
+            }
+        )
 
-                // Add JavaScript interface for communication
-                addJavascriptInterface(
-                    FaceIoAuthJsInterface(
-                        onAuthenticated = onAuthenticated,
-                        onError = onError
-                    ),
-                    "AndroidInterface"
+        // Loading overlay
+        if (isLoading) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .align(Alignment.Center),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                 )
-
-                // Load Face.io authentication HTML
-                loadDataWithBaseURL(
-                    "https://localhost",
-                    getFaceIoAuthHtml(),
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
-
-                webView.value = this
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = loadingMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
-    )
+    }
 }
 
 class FaceIoAuthJsInterface(
     private val onAuthenticated: (rollNumber: String) -> Unit,
-    private val onError: (String) -> Unit
+    private val onError: (String) -> Unit,
+    private val onLoadingStateChange: (Boolean, String) -> Unit
 ) {
     @JavascriptInterface
     fun onAuthenticated(rollNumber: String) {
@@ -100,12 +137,17 @@ class FaceIoAuthJsInterface(
     }
 
     @JavascriptInterface
+    fun onLoadingStateChange(isLoading: Boolean, message: String) {
+        onLoadingStateChange(isLoading, message)
+    }
+
+    @JavascriptInterface
     fun log(message: String) {
         Timber.d("Auth WebView JS: $message")
     }
 }
 
-private fun getFaceIoAuthHtml(): String {
+private fun getEnhancedFaceIoAuthHtml(): String {
     return """
         <!DOCTYPE html>
         <html>
@@ -117,57 +159,88 @@ private fun getFaceIoAuthHtml(): String {
                 body {
                     margin: 0;
                     padding: 20px;
-                    font-family: Arial, sans-serif;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                     display: flex;
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
                     min-height: 100vh;
-                    background-color: #f5f5f5;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
                 }
                 .container {
                     text-align: center;
-                    background: white;
+                    background: rgba(255,255,255,0.1);
+                    backdrop-filter: blur(10px);
                     padding: 30px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    border-radius: 20px;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
                     max-width: 400px;
                     width: 100%;
+                    border: 1px solid rgba(255,255,255,0.2);
                 }
                 h2 {
-                    color: #333;
                     margin-bottom: 20px;
+                    font-size: 1.5em;
+                    font-weight: 600;
                 }
                 .info {
-                    color: #666;
                     margin-bottom: 20px;
+                    font-size: 1.1em;
+                    opacity: 0.9;
                 }
                 .status {
                     margin-top: 20px;
-                    padding: 10px;
-                    border-radius: 5px;
-                    font-weight: bold;
+                    padding: 15px;
+                    border-radius: 10px;
+                    font-weight: 500;
+                    transition: all 0.3s ease;
                 }
                 .success {
-                    background-color: #d4edda;
-                    color: #155724;
+                    background: rgba(76, 175, 80, 0.3);
+                    border: 1px solid rgba(76, 175, 80, 0.5);
                 }
                 .error {
-                    background-color: #f8d7da;
-                    color: #721c24;
+                    background: rgba(244, 67, 54, 0.3);
+                    border: 1px solid rgba(244, 67, 54, 0.5);
                 }
                 .loading {
-                    background-color: #cce5ff;
-                    color: #004085;
+                    background: rgba(33, 150, 243, 0.3);
+                    border: 1px solid rgba(33, 150, 243, 0.5);
                 }
                 .button {
-                    background-color: #007bff;
+                    background: linear-gradient(45deg, #2196F3, #21CBF3);
                     color: white;
                     border: none;
-                    padding: 10px 20px;
-                    border-radius: 5px;
+                    padding: 12px 24px;
+                    border-radius: 25px;
                     cursor: pointer;
-                    margin-top: 10px;
+                    margin-top: 15px;
+                    font-size: 1em;
+                    font-weight: 500;
+                    transition: all 0.3s ease;
+                    box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+                }
+                .button:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4);
+                }
+                .button:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                    transform: none;
+                }
+                .icon {
+                    font-size: 3em;
+                    margin-bottom: 15px;
+                }
+                .pulse {
+                    animation: pulse 2s infinite;
+                }
+                @keyframes pulse {
+                    0% { opacity: 1; }
+                    50% { opacity: 0.7; }
+                    100% { opacity: 1; }
                 }
             </style>
         </head>
@@ -176,8 +249,9 @@ private fun getFaceIoAuthHtml(): String {
             <div id="faceio-modal"></div>
             
             <div class="container">
-                <h2>Attendance Verification</h2>
-                <p class="info">Look at the camera to mark attendance</p>
+                <div class="icon pulse">🔐</div>
+                <h2>Face Authentication</h2>
+                <p class="info">Position your face in the camera frame to mark attendance</p>
                 <div id="status" class="status loading">Initializing Face.io...</div>
                 <button id="startButton" class="button" style="display: none;">Start Face Scan</button>
             </div>
@@ -194,6 +268,12 @@ private fun getFaceIoAuthHtml(): String {
                     }
                 }
                 
+                function updateLoadingState(isLoading, message) {
+                    if (window.AndroidInterface && window.AndroidInterface.onLoadingStateChange) {
+                        window.AndroidInterface.onLoadingStateChange(isLoading, message);
+                    }
+                }
+                
                 let faceio = null;
                 const statusDiv = document.getElementById('status');
                 const startButton = document.getElementById('startButton');
@@ -201,6 +281,7 @@ private fun getFaceIoAuthHtml(): String {
                 // Initialize Face.io when page loads
                 window.addEventListener('load', function() {
                     log('Page loaded, initializing Face.io for authentication...');
+                    updateLoadingState(true, 'Initializing Face.io...');
                     
                     setTimeout(function() {
                         try {
@@ -208,17 +289,21 @@ private fun getFaceIoAuthHtml(): String {
                             faceio = new faceIO('fioa264a');
                             log('Face.io initialized successfully');
                             
-                            statusDiv.innerHTML = 'Face.io ready. Click button to scan face.';
+                            statusDiv.innerHTML = 'Ready for face scan. Click button to start.';
                             statusDiv.className = 'status loading';
                             
                             // Show start button
                             startButton.style.display = 'block';
                             startButton.addEventListener('click', startAuthentication);
                             
+                            updateLoadingState(false, '');
+                            
                         } catch (error) {
                             log('Failed to initialize Face.io: ' + error.message);
                             statusDiv.innerHTML = 'Failed to initialize Face.io: ' + error.message;
                             statusDiv.className = 'status error';
+                            
+                            updateLoadingState(false, '');
                             
                             if (window.AndroidInterface) {
                                 window.AndroidInterface.onError('Initialization failed: ' + error.message);
@@ -233,6 +318,8 @@ private fun getFaceIoAuthHtml(): String {
                     statusDiv.innerHTML = 'Scanning face...';
                     statusDiv.className = 'status loading';
                     
+                    updateLoadingState(true, 'Scanning face...');
+                    
                     // Small delay before starting authentication
                     setTimeout(function() {
                         authenticateUser();
@@ -244,6 +331,7 @@ private fun getFaceIoAuthHtml(): String {
                         log('Face.io not initialized');
                         statusDiv.innerHTML = 'Face.io not initialized';
                         statusDiv.className = 'status error';
+                        updateLoadingState(false, '');
                         return;
                     }
                     
@@ -261,6 +349,8 @@ private fun getFaceIoAuthHtml(): String {
                         statusDiv.innerHTML = 'Face recognized! Roll Number: ' + rollNumber;
                         statusDiv.className = 'status success';
                         
+                        updateLoadingState(false, '');
+                        
                         // Send roll number to Android
                         if (window.AndroidInterface) {
                             window.AndroidInterface.onAuthenticated(rollNumber);
@@ -275,6 +365,8 @@ private fun getFaceIoAuthHtml(): String {
                         // Show retry button
                         startButton.textContent = 'Try Again';
                         startButton.style.display = 'block';
+                        
+                        updateLoadingState(false, '');
                         
                         // Send error to Android
                         if (window.AndroidInterface) {
