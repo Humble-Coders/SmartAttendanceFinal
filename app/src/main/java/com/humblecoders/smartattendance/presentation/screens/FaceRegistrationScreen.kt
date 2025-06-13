@@ -15,6 +15,7 @@ import com.humblecoders.smartattendance.presentation.components.FaceIoWebView
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import com.humblecoders.smartattendance.utils.SettingsUtil
 import kotlinx.coroutines.delay
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,15 +28,18 @@ fun FaceRegistrationScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var hasCameraPermission by remember { mutableStateOf(false) }
     var permissionDenied by remember { mutableStateOf(false) }
+    var isProcessingRegistration by remember { mutableStateOf(false) }
 
     // Handle camera permission
     CameraPermissionHandler(
         onPermissionGranted = {
             hasCameraPermission = true
             permissionDenied = false
+            Timber.d("FaceRegistrationScreen - Camera permission granted")
         },
         onPermissionDenied = {
             permissionDenied = true
+            Timber.w("FaceRegistrationScreen - Camera permission denied")
         }
     )
 
@@ -85,6 +89,37 @@ fun FaceRegistrationScreen(
                         }
                     }
                 }
+                isProcessingRegistration -> {
+                    // Show processing state
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Processing Registration...",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Please wait while we save your face data",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
                 showSuccess -> {
                     // Show success message
                     SuccessContent(
@@ -107,11 +142,27 @@ fun FaceRegistrationScreen(
                         modifier = Modifier.fillMaxSize(),
                         rollNumber = profileData.rollNumber,
                         onFaceRegistered = { faceId ->
-                            // Update face registration status
-                            profileViewModel.updateFaceRegistrationStatus(true)
-                            showSuccess = true
+                            Timber.d("FaceRegistrationScreen - Face registered with ID: $faceId")
+                            isProcessingRegistration = true
+
+                            // Update face registration status with comprehensive error handling
+                            profileViewModel.updateFaceRegistrationStatus(
+                                isRegistered = true,
+                                onSuccess = {
+                                    Timber.i("FaceRegistrationScreen - Face registration status updated successfully")
+                                    isProcessingRegistration = false
+                                    showSuccess = true
+                                },
+                                onError = { error ->
+                                    Timber.e("FaceRegistrationScreen - Failed to update registration status: $error")
+                                    isProcessingRegistration = false
+                                    errorMessage = "Registration successful but failed to save status: $error"
+                                }
+                            )
                         },
                         onError = { error ->
+                            Timber.e("FaceRegistrationScreen - Face registration error: $error")
+                            isProcessingRegistration = false
                             errorMessage = error
                         }
                     )
@@ -202,8 +253,9 @@ private fun PermissionDeniedContent(
 private fun SuccessContent(
     onDone: () -> Unit
 ) {
+    // Auto navigate after 3 seconds instead of 2 for better UX
     LaunchedEffect(Unit) {
-        delay(2000) // Auto navigate after 2 seconds
+        delay(3000)
         onDone()
     }
 
@@ -233,14 +285,16 @@ private fun SuccessContent(
 
                 Text(
                     text = "Face Registered Successfully!",
-                    style = MaterialTheme.typography.headlineSmall
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "You can now mark attendance",
-                    style = MaterialTheme.typography.bodyLarge
+                    text = "You can now mark attendance using face recognition",
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -251,6 +305,15 @@ private fun SuccessContent(
                 ) {
                     Text("Done")
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Returning to profile in 3 seconds...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

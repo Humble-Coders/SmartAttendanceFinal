@@ -14,7 +14,6 @@ import androidx.compose.ui.unit.dp
 import com.humblecoders.smartattendance.data.repository.BleState
 import com.humblecoders.smartattendance.presentation.components.AttendanceConfirmationDialog
 import com.humblecoders.smartattendance.presentation.components.BluetoothPermissionHandler
-import com.humblecoders.smartattendance.presentation.components.FaceIoDeleteWebView
 import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 
@@ -30,10 +29,8 @@ fun HomeScreen(
     val esp32DeviceFound by bleViewModel.esp32DeviceFound.collectAsState()
     val subjectCode by bleViewModel.subjectCode.collectAsState()
     val profileData by profileViewModel.profileData.collectAsState()
-    val isDeleting by profileViewModel.isDeleting.collectAsState()
     var showAttendanceDialog by remember { mutableStateOf(false) }
     var showDeleteFacesDialog by remember { mutableStateOf(false) }
-    var showDeleteWebView by remember { mutableStateOf(false) }
     var showDeleteCompleteDialog by remember { mutableStateOf(false) }
     var deleteResultMessage by remember { mutableStateOf("") }
 
@@ -85,7 +82,7 @@ fun HomeScreen(
             },
             title = {
                 Text(
-                    text = "Delete All Registered Faces",
+                    text = "Reset Face Registration",
                     textAlign = TextAlign.Center
                 )
             },
@@ -95,33 +92,27 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "This will completely reset the face recognition system:",
+                        text = "This will reset your face registration status:",
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "• Delete all faces from Face.io service",
+                        text = "• Clear local face registration status",
                         textAlign = TextAlign.Start,
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
-                        text = "• Reset app's face registration status",
-                        textAlign = TextAlign.Start,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = "• Clear all biometric data",
+                        text = "• You'll need to register your face again",
                         textAlign = TextAlign.Start,
                         style = MaterialTheme.typography.bodySmall
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "This action cannot be undone!",
+                        text = "Note: This only resets the app status. Face.io data remains on their servers.",
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
                 }
             },
@@ -129,13 +120,23 @@ fun HomeScreen(
                 Button(
                     onClick = {
                         showDeleteFacesDialog = false
-                        showDeleteWebView = true
+                        // Reset face registration status
+                        profileViewModel.resetFaceRegistrationOnly(
+                            onSuccess = {
+                                deleteResultMessage = "Face registration status reset successfully! You can now register your face again."
+                                showDeleteCompleteDialog = true
+                            },
+                            onError = { error ->
+                                deleteResultMessage = "Error resetting face registration: $error"
+                                showDeleteCompleteDialog = true
+                            }
+                        )
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
+                        containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Text("Delete Everything")
+                    Text("Reset Face Registration")
                 }
             },
             dismissButton = {
@@ -146,65 +147,6 @@ fun HomeScreen(
                 }
             }
         )
-    }
-
-    // Delete WebView for Face.io deletion
-    if (showDeleteWebView) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Deleting All Faces...",
-                        style = MaterialTheme.typography.headlineSmall,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    if (isDeleting) {
-                        CircularProgressIndicator()
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Please wait...")
-                    }
-
-                    FaceIoDeleteWebView(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(300.dp),
-                        onDeleteComplete = { success, message ->
-                            // Handle Face.io deletion result
-                            profileViewModel.deleteAllFaces(
-                                onSuccess = {
-                                    deleteResultMessage = if (success) {
-                                        "All faces deleted successfully! Face recognition has been reset."
-                                    } else {
-                                        "Local face data cleared. $message"
-                                    }
-                                    showDeleteWebView = false
-                                    showDeleteCompleteDialog = true
-                                },
-                                onError = { error ->
-                                    deleteResultMessage = "Error: $error"
-                                    showDeleteWebView = false
-                                    showDeleteCompleteDialog = true
-                                }
-                            )
-                        }
-                    )
-                }
-            }
-        }
     }
 
     // Delete Complete Dialog
@@ -219,7 +161,7 @@ fun HomeScreen(
             },
             title = {
                 Text(
-                    text = "Deletion Complete",
+                    text = "Reset Complete",
                     textAlign = TextAlign.Center
                 )
             },
@@ -246,7 +188,7 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Smart Attendance") },
                 actions = {
-                    // Delete Faces button (for testing)
+                    // Reset Face Registration button (for testing)
                     if (profileData.isFaceRegistered) {
                         IconButton(
                             onClick = { showDeleteFacesDialog = true }
