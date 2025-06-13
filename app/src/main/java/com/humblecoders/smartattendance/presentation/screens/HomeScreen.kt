@@ -30,9 +30,6 @@ fun HomeScreen(
     val subjectCode by bleViewModel.subjectCode.collectAsState()
     val profileData by profileViewModel.profileData.collectAsState()
     var showAttendanceDialog by remember { mutableStateOf(false) }
-    var showDeleteFacesDialog by remember { mutableStateOf(false) }
-    var showDeleteCompleteDialog by remember { mutableStateOf(false) }
-    var deleteResultMessage by remember { mutableStateOf("") }
 
     // Handle Bluetooth permissions
     BluetoothPermissionHandler(
@@ -70,136 +67,11 @@ fun HomeScreen(
         )
     }
 
-    // Delete Registered Faces Confirmation Dialog
-    if (showDeleteFacesDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteFacesDialog = false },
-            icon = {
-                Text(
-                    text = "🗑️",
-                    style = MaterialTheme.typography.displayMedium
-                )
-            },
-            title = {
-                Text(
-                    text = "Reset Face Registration",
-                    textAlign = TextAlign.Center
-                )
-            },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "This will reset your face registration status:",
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "• Clear local face registration status",
-                        textAlign = TextAlign.Start,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = "• You'll need to register your face again",
-                        textAlign = TextAlign.Start,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Note: This only resets the app status. Face.io data remains on their servers.",
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteFacesDialog = false
-                        // Reset face registration status
-                        profileViewModel.resetFaceRegistrationOnly(
-                            onSuccess = {
-                                deleteResultMessage = "Face registration status reset successfully! You can now register your face again."
-                                showDeleteCompleteDialog = true
-                            },
-                            onError = { error ->
-                                deleteResultMessage = "Error resetting face registration: $error"
-                                showDeleteCompleteDialog = true
-                            }
-                        )
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text("Reset Face Registration")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = { showDeleteFacesDialog = false }
-                ) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    // Delete Complete Dialog
-    if (showDeleteCompleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteCompleteDialog = false },
-            icon = {
-                Text(
-                    text = "✅",
-                    style = MaterialTheme.typography.displayMedium
-                )
-            },
-            title = {
-                Text(
-                    text = "Reset Complete",
-                    textAlign = TextAlign.Center
-                )
-            },
-            text = {
-                Text(
-                    text = deleteResultMessage,
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { showDeleteCompleteDialog = false },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("OK")
-                }
-            }
-        )
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Smart Attendance") },
                 actions = {
-                    // Reset Face Registration button (for testing)
-                    if (profileData.isFaceRegistered) {
-                        IconButton(
-                            onClick = { showDeleteFacesDialog = true }
-                        ) {
-                            Text(
-                                text = "🗑️",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
-                    }
-
                     // Refresh button for manual scan restart
                     IconButton(
                         onClick = {
@@ -267,13 +139,57 @@ fun HomeScreen(
                 }
             }
 
+            // Student Info Card (if profile saved)
+            if (profileData.name.isNotBlank() && profileData.rollNumber.isNotBlank()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "👤",
+                            style = MaterialTheme.typography.displaySmall
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "Student Profile",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = profileData.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Text(
+                            text = "Roll No: ${profileData.rollNumber}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+
             // BLE Status Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = when (bleState) {
-                        BleState.SCANNING -> MaterialTheme.colorScheme.secondaryContainer
-                        BleState.DEVICE_FOUND -> MaterialTheme.colorScheme.tertiaryContainer
+                        BleState.SCANNING -> MaterialTheme.colorScheme.tertiaryContainer
+                        BleState.DEVICE_FOUND -> MaterialTheme.colorScheme.primaryContainer
                         BleState.BLUETOOTH_OFF -> MaterialTheme.colorScheme.errorContainer
                         BleState.NO_PERMISSION -> MaterialTheme.colorScheme.errorContainer
                         else -> MaterialTheme.colorScheme.surfaceVariant
@@ -327,7 +243,7 @@ fun HomeScreen(
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
                             strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
                     }
 
@@ -385,7 +301,8 @@ fun HomeScreen(
                         "📍 Keep Bluetooth enabled",
                         "🔍 Press refresh button to start scanning",
                         "📱 When detected, confirm to mark attendance",
-                        "😊 Face verification completes the process"
+                        "😊 Face verification completes the process",
+                        "👨‍💼 Face registration managed by admin"
                     )
 
                     instructions.forEach { instruction ->

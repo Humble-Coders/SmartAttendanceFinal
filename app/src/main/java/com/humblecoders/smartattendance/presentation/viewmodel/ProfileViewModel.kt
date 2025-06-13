@@ -12,19 +12,13 @@ class ProfileViewModel(
     private val profileRepository: ProfileRepository
 ) : ViewModel() {
 
-    private val _immediateProfileData = MutableStateFlow<ProfileData?>(null)
-
     // Profile data from repository
-    val profileData: StateFlow<ProfileData> = combine(
-        profileRepository.profileData,
-        _immediateProfileData
-    ) { repoData, immediateData ->
-        immediateData ?: repoData
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = ProfileData()
-    )
+    val profileData: StateFlow<ProfileData> = profileRepository.profileData
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ProfileData()
+        )
 
     // Local state for form inputs
     private val _nameInput = MutableStateFlow("")
@@ -36,9 +30,6 @@ class ProfileViewModel(
     // UI state
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
-
-    private val _isDeleting = MutableStateFlow(false)
-    val isDeleting: StateFlow<Boolean> = _isDeleting.asStateFlow()
 
     // Track if we've initialized the form inputs
     private val _isFormInitialized = MutableStateFlow(false)
@@ -109,73 +100,8 @@ class ProfileViewModel(
         }
     }
 
-    fun updateFaceRegistrationStatus(
-        isRegistered: Boolean,
-        onSuccess: () -> Unit = {},
-        onError: (String) -> Unit = {}
-    ) {
-        viewModelScope.launch {
-            try {
-                Timber.d("ProfileViewModel - Updating face registration status to: $isRegistered")
-
-                // IMMEDIATELY update UI state
-                val currentProfile = profileData.value
-                _immediateProfileData.value = currentProfile.copy(isFaceRegistered = isRegistered)
-
-                // Then update DataStore in background
-                profileRepository.updateFaceRegistrationStatus(isRegistered)
-
-                Timber.i("ProfileViewModel - Face registration status updated to: $isRegistered")
-                onSuccess()
-
-            } catch (e: Exception) {
-                val errorMsg = "Failed to update face registration status: ${e.message}"
-                Timber.e(e, "ProfileViewModel - $errorMsg")
-
-                // Revert immediate state on error
-                _immediateProfileData.value = null
-                onError(errorMsg)
-            }
-        }
-    }
-    /**
-     * Delete all faces - resets face registration status in the app
-     * This should be called after Face.io deletion is complete
-     */
-    fun deleteAllFaces(onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
-        viewModelScope.launch {
-            _isDeleting.value = true
-            try {
-                Timber.d("ProfileViewModel - Starting face deletion process")
-
-                // Reset face registration status
-                profileRepository.updateFaceRegistrationStatus(false)
-
-                // Wait for DataStore to propagate
-                kotlinx.coroutines.delay(200)
-
-                // Verify deletion
-                val currentStatus = profileRepository.getFaceRegistrationStatus()
-                if (!currentStatus) {
-                    Timber.i("ProfileViewModel - All faces deleted successfully")
-                    onSuccess()
-                } else {
-                    throw Exception("Face deletion verification failed - status still shows registered")
-                }
-
-            } catch (e: Exception) {
-                val errorMsg = "Failed to delete faces: ${e.message}"
-                Timber.e(e, "ProfileViewModel - $errorMsg")
-                onError(errorMsg)
-            } finally {
-                _isDeleting.value = false
-            }
-        }
-    }
-
     /**
      * Complete profile reset - clears all data including name and roll number
-     * Use this for complete app reset
      */
     fun resetCompleteProfile(onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
         viewModelScope.launch {
@@ -200,26 +126,11 @@ class ProfileViewModel(
     }
 
     /**
-     * Quick face reset - only resets face registration, keeps profile data
-     * Good for testing face registration repeatedly
-     */
-    fun resetFaceRegistrationOnly(onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
-        updateFaceRegistrationStatus(false, onSuccess, onError)
-    }
-
-    /**
-     * Check if any face data exists
-     */
-    fun hasFaceRegistered(): Boolean {
-        return profileData.value.isFaceRegistered
-    }
-
-    /**
      * Get current profile summary for logging/debugging
      */
     fun getProfileSummary(): String {
         val profile = profileData.value
-        return "Profile: name='${profile.name}', rollNumber='${profile.rollNumber}', faceRegistered=${profile.isFaceRegistered}"
+        return "Profile: name='${profile.name}', rollNumber='${profile.rollNumber}'"
     }
 
     // Method to reload form inputs if needed (optional)
@@ -237,10 +148,6 @@ class ProfileViewModel(
         return _nameInput.value.isNotBlank() && _rollNumberInput.value.isNotBlank()
     }
 
-    fun canRegisterFace(): Boolean {
-        return isProfileSaved.value
-    }
-
     /**
      * Validate form inputs and provide specific error messages
      */
@@ -254,43 +161,16 @@ class ProfileViewModel(
         }
     }
 
-    /**
-     * Get deletion status for UI feedback
-     */
-    fun getDeletionStatus(): Boolean {
-        return _isDeleting.value
-    }
-
-    /**
-     * Force refresh profile data (useful for debugging)
-     */
-    fun refreshProfileData() {
-        viewModelScope.launch {
-            try {
-                val currentProfile = profileRepository.profileData.first()
-                Timber.d("ProfileViewModel - Force refreshed profile data: ${getProfileSummary()}")
-            } catch (e: Exception) {
-                Timber.e(e, "ProfileViewModel - Failed to refresh profile data")
-            }
-        }
-    }
-
-    // Add this method to ProfileViewModel.kt
-
-    fun forceRefreshProfile() {
-        viewModelScope.launch {
-            try {
-                // Force re-read from DataStore
-                profileRepository.profileData.first()
-                Timber.d("ProfileViewModel - Force refreshed profile data")
-            } catch (e: Exception) {
-                Timber.e(e, "ProfileViewModel - Failed to force refresh profile data")
-            }
-        }
-    }
-
     override fun onCleared() {
         super.onCleared()
         Timber.d("ProfileViewModel - ViewModel cleared")
     }
+
+    // Remove all face registration related methods:
+    // - updateFaceRegistrationStatus()
+    // - deleteAllFaces()
+    // - resetFaceRegistrationOnly()
+    // - hasFaceRegistered()
+    // - canRegisterFace()
+    // - forceRefreshProfile()
 }

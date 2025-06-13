@@ -15,15 +15,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 
-// Update ProfileScreen function signature and face registration display logic
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     profileViewModel: ProfileViewModel,
-    faceRegisteredFromNav: Boolean = false, // Add this parameter
-    onNavigateBack: () -> Unit,
-    onFaceRegistrationClick: () -> Unit
+    onNavigateBack: () -> Unit
 ) {
     val profileData by profileViewModel.profileData.collectAsState()
     val nameInput by profileViewModel.nameInput.collectAsState()
@@ -31,13 +27,6 @@ fun ProfileScreen(
     val isSaving by profileViewModel.isSaving.collectAsState()
     val isFormInitialized by profileViewModel.isFormInitialized.collectAsState()
     val isProfileSaved by profileViewModel.isProfileSaved.collectAsState()
-
-    // Override face registration status if coming from navigation
-    val displayProfileData = if (faceRegisteredFromNav) {
-        profileData.copy(isFaceRegistered = true)
-    } else {
-        profileData
-    }
 
     // Local state for UI feedback
     var showSaveSuccess by remember { mutableStateOf(false) }
@@ -226,16 +215,12 @@ fun ProfileScreen(
                     }
                 }
 
-                // Face Registration Section - Use displayProfileData instead of profileData
+                // Face Registration Info Section
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (displayProfileData.isFaceRegistered) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
                     )
                 ) {
                     Column(
@@ -245,76 +230,54 @@ fun ProfileScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (displayProfileData.isFaceRegistered) {
-                                    Icons.Default.Check
-                                } else {
-                                    Icons.Default.Close
-                                },
-                                contentDescription = null,
-                                tint = if (displayProfileData.isFaceRegistered) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.error
-                                }
-                            )
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            Text(
-                                text = if (displayProfileData.isFaceRegistered) {
-                                    "Face Registered"
-                                } else {
-                                    "Face Not Registered"
-                                },
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
+                        Text(
+                            text = "📱",
+                            style = MaterialTheme.typography.displaySmall
+                        )
 
                         Text(
-                            text = if (displayProfileData.isFaceRegistered) {
-                                "Your face has been registered for attendance\nRoll Number: ${displayProfileData.rollNumber}"
-                            } else {
-                                "Register your face to enable attendance marking"
-                            },
+                            text = "Face Registration",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+
+                        Text(
+                            text = "Face registration is managed by the admin. Please contact your administrator to register your face for attendance marking.",
                             style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center
                         )
 
-                        if (!displayProfileData.isFaceRegistered) {
-                            if (!isProfileSaved) {
-                                Text(
-                                    text = "Please save your profile first",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                    textAlign = TextAlign.Center
+                        if (isProfileSaved) {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
                                 )
-                            }
-
-                            Button(
-                                onClick = onFaceRegistrationClick,
-                                enabled = isProfileSaved && !isSaving,
-                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Register Face")
-                            }
-                        } else {
-                            // Option to re-register face
-                            OutlinedButton(
-                                onClick = onFaceRegistrationClick,
-                                enabled = isProfileSaved && !isSaving,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Re-register Face")
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "Your Details",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = "Roll Number: ${profileData.rollNumber}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = "Name: ${profileData.name}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // Profile Summary (show current saved data) - Use displayProfileData
+                // Profile Summary (show current saved data)
                 if (isProfileSaved) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -329,22 +292,17 @@ fun ProfileScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "Current Profile",
+                                text = "Profile Status",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Text(
-                                text = "Name: ${displayProfileData.name}",
+                                text = "✓ Profile information saved",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Text(
-                                text = "Roll Number: ${displayProfileData.rollNumber}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                            Text(
-                                text = "Face Status: ${if (displayProfileData.isFaceRegistered) "Registered" else "Not Registered"}",
+                                text = "📞 Contact admin for face registration",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )

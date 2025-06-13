@@ -5,7 +5,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.humblecoders.smartattendance.presentation.screens.AttendanceMarkingScreen
-import com.humblecoders.smartattendance.presentation.screens.FaceRegistrationScreen
 import com.humblecoders.smartattendance.presentation.screens.HomeScreen
 import com.humblecoders.smartattendance.presentation.screens.ProfileScreen
 import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewModel
@@ -37,33 +36,11 @@ fun AppNavigation(
             )
         }
 
-        // Updated Profile route with parameter
-        composable(Screen.Profile.route) { navBackStackEntry ->
-            val faceRegisteredParam = navBackStackEntry.arguments?.getString("faceRegistered")?.toBoolean() ?: false
-
+        composable(Screen.Profile.route) {
             ProfileScreen(
                 profileViewModel = profileViewModel,
-                faceRegisteredFromNav = faceRegisteredParam,
                 onNavigateBack = {
                     navController.popBackStack()
-                },
-                onFaceRegistrationClick = {
-                    navController.navigate(Screen.FaceRegistration.route)
-                }
-            )
-        }
-
-        composable(Screen.FaceRegistration.route) {
-            FaceRegistrationScreen(
-                profileViewModel = profileViewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onFaceRegistrationSuccess = {
-                    // Navigate to profile with face registered parameter
-                    navController.navigate(Screen.Profile.createRoute(faceRegistered = true)) {
-                        popUpTo(Screen.FaceRegistration.route) { inclusive = true }
-                    }
                 }
             )
         }
@@ -81,9 +58,7 @@ fun AppNavigation(
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    object Profile : Screen("profile?faceRegistered={faceRegistered}") {
-        fun createRoute(faceRegistered: Boolean = false) = "profile?faceRegistered=$faceRegistered"
-    }
-    object FaceRegistration : Screen("face_registration")
+    object Profile : Screen("profile")
     object AttendanceMarking : Screen("attendance_marking")
+    // Remove FaceRegistration screen
 }

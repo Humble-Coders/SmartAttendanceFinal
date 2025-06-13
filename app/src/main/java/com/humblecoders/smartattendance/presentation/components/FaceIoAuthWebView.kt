@@ -88,10 +88,18 @@ class FaceIoAuthJsInterface(
     private val onError: (String) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var hasAuthenticated = false // Prevent multiple callbacks
 
     @JavascriptInterface
     fun onAuthenticated(rollNumber: String) {
+        if (hasAuthenticated) {
+            Timber.d("Authentication already processed, ignoring duplicate call")
+            return
+        }
+
+        hasAuthenticated = true
         Timber.d("User authenticated with roll number: $rollNumber")
+
         // Use Handler to ensure execution on main thread
         mainHandler.post {
             try {
@@ -185,6 +193,10 @@ private fun getFaceIoAuthHtml(): String {
                     cursor: pointer;
                     margin-top: 10px;
                 }
+                .button:disabled {
+                    background-color: #6c757d;
+                    cursor: not-allowed;
+                }
             </style>
         </head>
         <body>
@@ -200,6 +212,12 @@ private fun getFaceIoAuthHtml(): String {
             <script src="https://cdn.faceio.net/fio.js"></script>
             
             <script type="text/javascript">
+                let faceio = null;
+                let isAuthenticating = false;
+                let hasAuthenticated = false;
+                const statusDiv = document.getElementById('status');
+                const startButton = document.getElementById('startButton');
+                
                 function log(message) {
                     console.log(message);
                     if (window.AndroidInterface && window.AndroidInterface.log) {
@@ -211,13 +229,22 @@ private fun getFaceIoAuthHtml(): String {
                     }
                 }
                 
-                // Safe callback function with delayed execution
+                // Safe callback function with delayed execution and duplicate prevention
                 function safeCallback(callbackName, data, delay = 100) {
+                    if (hasAuthenticated && callbackName === 'onAuthenticated') {
+                        log('Authentication already processed, preventing duplicate callback');
+                        return;
+                    }
+                    
                     setTimeout(() => {
                         try {
                             if (window.AndroidInterface && window.AndroidInterface[callbackName]) {
                                 log('Calling ' + callbackName + ' with data: ' + data);
                                 window.AndroidInterface[callbackName](data);
+                                
+                                if (callbackName === 'onAuthenticated') {
+                                    hasAuthenticated = true;
+                                }
                             } else {
                                 log('AndroidInterface.' + callbackName + ' not available');
                             }
@@ -227,10 +254,6 @@ private fun getFaceIoAuthHtml(): String {
                         }
                     }, delay);
                 }
-                
-                let faceio = null;
-                const statusDiv = document.getElementById('status');
-                const startButton = document.getElementById('startButton');
                 
                 window.addEventListener('load', function() {
                     log('Page loaded, initializing Face.io for authentication...');
@@ -257,7 +280,13 @@ private fun getFaceIoAuthHtml(): String {
                 });
                 
                 function startAuthentication() {
+                    if (isAuthenticating || hasAuthenticated) {
+                        log('Authentication already in progress or completed');
+                        return;
+                    }
+                    
                     log('Starting authentication...');
+                    isAuthenticating = true;
                     startButton.style.display = 'none';
                     statusDiv.innerHTML = 'Scanning face...';
                     statusDiv.className = 'status loading';
@@ -268,7 +297,11 @@ private fun getFaceIoAuthHtml(): String {
                 }
                 
                 function authenticateUser() {
-                    if (!faceio) {
+                    if (!faceio || hasAuthenticated) {
+                        if (hasAuthenticated) {
+                            log('Authentication already completed');
+                            return;
+                        }
                         log('Face.io not initialized');
                         statusDiv.innerHTML = 'Face.io not initialized';
                         statusDiv.className = 'status error';
@@ -280,23 +313,39 @@ private fun getFaceIoAuthHtml(): String {
                     faceio.authenticate({
                         locale: "auto"
                     }).then(userData => {
+                        if (hasAuthenticated) {
+                            log('Authentication already processed, ignoring result');
+                            return;
+                        }
+                        
                         log('Authentication successful!');
                         log('Payload: ' + JSON.stringify(userData.payload));
                         
                         const rollNumber = userData.payload ? userData.payload.rollNumber : 'Unknown';
                         
-                        statusDiv.innerHTML = 'Face recognized! Roll Number: ' + rollNumber;
+                        statusDiv.innerHTML = 'Face recognized! Roll Number: ' + rollNumber + '<br>Processing attendance...';
                         statusDiv.className = 'status success';
+                        
+                        // Disable further authentication attempts
+                        isAuthenticating = false;
+                        startButton.disabled = true;
+                        startButton.textContent = 'Authentication Complete';
                         
                         // Use safe callback with delay
                         safeCallback('onAuthenticated', rollNumber, 200);
                         
                     }).catch(errCode => {
+                        if (hasAuthenticated) {
+                            log('Authentication already completed, ignoring error');
+                            return;
+                        }
+                        
                         log('Authentication failed with error code: ' + errCode);
                         let errorMessage = handleError(errCode);
                         statusDiv.innerHTML = 'Error: ' + errorMessage;
                         statusDiv.className = 'status error';
                         
+                        isAuthenticating = false;
                         startButton.textContent = 'Try Again';
                         startButton.style.display = 'block';
                         
