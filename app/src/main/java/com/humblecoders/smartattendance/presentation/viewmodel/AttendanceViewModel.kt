@@ -1,19 +1,38 @@
+// Replace your existing AttendanceViewModel.kt with this:
+
 package com.humblecoders.smartattendance.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.humblecoders.smartattendance.data.repository.AttendanceRepository
 import com.humblecoders.smartattendance.data.repository.ProfileRepository
+import com.humblecoders.smartattendance.data.model.AttendanceRecord
+import com.humblecoders.smartattendance.data.repository.AttendanceStats
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 class AttendanceViewModel(
     private val attendanceRepository: AttendanceRepository,
     private val profileRepository: ProfileRepository
 ) : ViewModel() {
 
+    // UI State
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _attendanceHistory = MutableStateFlow<List<AttendanceRecord>>(emptyList())
+    val attendanceHistory: StateFlow<List<AttendanceRecord>> = _attendanceHistory.asStateFlow()
+
+    private val _attendanceStats = MutableStateFlow<AttendanceStats?>(null)
+    val attendanceStats: StateFlow<AttendanceStats?> = _attendanceStats.asStateFlow()
+
+    /**
+     * Mark attendance with comprehensive validation and Firebase integration
+     */
     fun markAttendance(
         rollNumber: String,
         subjectCode: String = "Unknown",
@@ -21,140 +40,287 @@ class AttendanceViewModel(
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
+            _isLoading.value = true
+
             try {
-                // Get current timestamp
-                val timestamp = LocalDateTime.now()
-                    .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                // Get student profile data
+                val profileData = profileRepository.profileData.first()
+                val studentName = profileData.name.ifBlank { "Unknown Student" }
 
-                Timber.d("Marking attendance for roll number: $rollNumber, subject: $subjectCode at $timestamp")
+                Timber.d("Starting attendance marking for: $rollNumber, Subject: $subjectCode, Student: $studentName")
 
-                // TODO: In a real app, this would:
-                // 1. Verify the student exists in your database
-                // 2. Check if attendance already marked today for this subject
-                // 3. Save to Firebase or your backend with subject code
-                // 4. Store attendance record with:
-                //    - rollNumber
-                //    - subjectCode
-                //    - timestamp
-                //    - location/classroom info
-                //    - verification method (face recognition)
+                // Simplified validation - only check for duplicate attendance
+                val eligibilityResult = attendanceRepository.validateAttendanceEligibility(rollNumber, subjectCode)
 
-                // Simulate attendance marking process
-                simulateAttendanceMarking(rollNumber, subjectCode)
+                if (eligibilityResult.isFailure) {
+                    val error = "Failed to validate attendance eligibility"
+                    Timber.e("Eligibility validation failed")
+                    onError(error)
+                    return@launch
+                }
 
-                Timber.i("Attendance marked successfully for $rollNumber in subject $subjectCode")
-                onSuccess()
+                val eligibility = eligibilityResult.getOrNull()!!
+                if (!eligibility.isEligible) {
+                    Timber.w("Attendance not eligible: ${eligibility.reason}")
+                    onError(eligibility.reason)
+                    return@launch
+                }
 
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to mark attendance")
-                onError("Failed to mark attendance: ${e.message}")
-            }
-        }
-    }
-
-    private suspend fun simulateAttendanceMarking(rollNumber: String, subjectCode: String) {
-        // Simulate network call delay
-        kotlinx.coroutines.delay(1000)
-
-        // In a real implementation, you would:
-        // 1. Call your API to mark attendance
-        // 2. Store in local database for offline support
-        // 3. Handle network errors and retry logic
-
-        /*
-        Example API call structure:
-
-        val attendanceRecord = AttendanceRecord(
-            rollNumber = rollNumber,
-            subjectCode = subjectCode,
-            timestamp = LocalDateTime.now(),
-            verificationMethod = "FACE_RECOGNITION",
-            location = getCurrentLocation(), // if needed
-            status = "PRESENT"
-        )
-
-        api.markAttendance(attendanceRecord)
-        localDb.insertAttendance(attendanceRecord)
-        */
-
-        Timber.d("Simulated attendance marking completed")
-    }
-
-    fun getAttendanceHistory(
-        rollNumber: String,
-        onSuccess: (List<AttendanceRecord>) -> Unit,
-        onError: (String) -> Unit
-    ) {
-        viewModelScope.launch {
-            try {
-                // TODO: Implement attendance history retrieval
-                // This would fetch attendance records from your backend/database
-                Timber.d("Fetching attendance history for roll number: $rollNumber")
-
-                // Simulate API call
-                kotlinx.coroutines.delay(500)
-
-                // Mock data for demonstration
-                val mockHistory = listOf(
-                    AttendanceRecord(
-                        rollNumber = rollNumber,
-                        subjectCode = "UCS301",
-                        timestamp = "2025-06-12T10:30:00",
-                        status = "PRESENT"
-                    ),
-                    AttendanceRecord(
-                        rollNumber = rollNumber,
-                        subjectCode = "UCS302",
-                        timestamp = "2025-06-11T14:15:00",
-                        status = "PRESENT"
-                    )
+                // Mark attendance
+                val result = attendanceRepository.markAttendance(
+                    rollNumber = rollNumber,
+                    studentName = studentName,
+                    subjectCode = subjectCode,
+                    location = "Mobile App" // You can add location detection later
                 )
 
-                onSuccess(mockHistory)
+                if (result.isSuccess) {
+                    val response = result.getOrNull()!!
+                    if (response.success) {
+                        Timber.i("Attendance marked successfully: ${response.attendanceId}")
+
+                        // Refresh attendance data
+                        refreshAttendanceData(rollNumber)
+
+                        onSuccess()
+                    } else {
+                        Timber.w("Attendance marking failed: ${response.message}")
+                        onError(response.message)
+                    }
+                } else {
+                    val error = result.exceptionOrNull()?.message ?: "Unknown error"
+                    Timber.e("Attendance marking failed: $error")
+                    onError("Failed to mark attendance: $error")
+                }
 
             } catch (e: Exception) {
-                Timber.e(e, "Failed to fetch attendance history")
-                onError("Failed to fetch attendance history: ${e.message}")
+                Timber.e(e, "Unexpected error during attendance marking")
+                onError("Unexpected error: ${e.message}")
+            } finally {
+                _isLoading.value = false
             }
         }
     }
 
-    fun validateAttendanceEligibility(
-        rollNumber: String,
+    /**
+     * Load attendance history for current student
+     */
+    fun loadAttendanceHistory() {
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+
+                val profileData = profileRepository.profileData.first()
+                val rollNumber = profileData.rollNumber
+
+                if (rollNumber.isBlank()) {
+                    Timber.w("Cannot load attendance history - no roll number available")
+                    return@launch
+                }
+
+                val result = attendanceRepository.getAttendanceHistory(rollNumber)
+
+                if (result.isSuccess) {
+                    val history = result.getOrNull() ?: emptyList()
+                    _attendanceHistory.value = history
+                    Timber.d("Loaded ${history.size} attendance records")
+                } else {
+                    Timber.e("Failed to load attendance history: ${result.exceptionOrNull()}")
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading attendance history")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Load attendance statistics for current student
+     */
+    fun loadAttendanceStats(subjectCode: String? = null) {
+        viewModelScope.launch {
+            try {
+                val profileData = profileRepository.profileData.first()
+                val rollNumber = profileData.rollNumber
+
+                if (rollNumber.isBlank()) {
+                    Timber.w("Cannot load attendance stats - no roll number available")
+                    return@launch
+                }
+
+                val result = attendanceRepository.getAttendanceStats(rollNumber, subjectCode)
+
+                if (result.isSuccess) {
+                    val stats = result.getOrNull()
+                    _attendanceStats.value = stats
+                    Timber.d("Loaded attendance stats: $stats")
+                } else {
+                    Timber.e("Failed to load attendance stats: ${result.exceptionOrNull()}")
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading attendance stats")
+            }
+        }
+    }
+
+    /**
+     * Sync student profile with Firebase
+     */
+    fun syncStudentProfile() {
+        viewModelScope.launch {
+            try {
+                val profileData = profileRepository.profileData.first()
+
+                if (profileData.rollNumber.isBlank() || profileData.name.isBlank()) {
+                    Timber.w("Cannot sync profile - incomplete profile data")
+                    return@launch
+                }
+
+                val result = attendanceRepository.saveStudentProfile(
+                    rollNumber = profileData.rollNumber,
+                    name = profileData.name,
+                    faceId = if (profileData.isFaceRegistered) "registered" else ""
+                )
+
+                if (result.isSuccess) {
+                    Timber.d("Student profile synced successfully")
+                } else {
+                    Timber.e("Failed to sync student profile: ${result.exceptionOrNull()}")
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error syncing student profile")
+            }
+        }
+    }
+
+    /**
+     * Update face ID in Firebase after face registration
+     */
+    fun updateFaceIdInFirebase(faceId: String) {
+        viewModelScope.launch {
+            try {
+                val profileData = profileRepository.profileData.first()
+                val rollNumber = profileData.rollNumber
+
+                if (rollNumber.isBlank()) {
+                    Timber.w("Cannot update face ID - no roll number available")
+                    return@launch
+                }
+
+                val result = attendanceRepository.updateStudentFaceId(rollNumber, faceId)
+
+                if (result.isSuccess) {
+                    Timber.d("Face ID updated in Firebase successfully")
+                } else {
+                    Timber.e("Failed to update face ID in Firebase: ${result.exceptionOrNull()}")
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error updating face ID in Firebase")
+            }
+        }
+    }
+
+    /**
+     * Check if subject is currently active for attendance
+     */
+    fun checkSubjectStatus(
         subjectCode: String,
-        onResult: (Boolean, String?) -> Unit
+        onResult: (Boolean, String) -> Unit
     ) {
         viewModelScope.launch {
             try {
-                // TODO: Implement attendance eligibility validation
-                // Check if:
-                // 1. Student is enrolled in the subject
-                // 2. Attendance not already marked for today
-                // 3. Within valid time window for the class
-                // 4. Student is in correct location/classroom
+                val result = attendanceRepository.isSubjectActive(subjectCode)
 
-                Timber.d("Validating attendance eligibility for $rollNumber in $subjectCode")
-
-                // Simulate validation
-                kotlinx.coroutines.delay(300)
-
-                // For demo, always return eligible
-                onResult(true, null)
+                if (result.isSuccess) {
+                    val isActive = result.getOrNull() ?: false
+                    val message = if (isActive) {
+                        "Subject is active for attendance"
+                    } else {
+                        "Subject is not currently active for attendance"
+                    }
+                    onResult(isActive, message)
+                } else {
+                    onResult(false, "Failed to check subject status")
+                }
 
             } catch (e: Exception) {
-                Timber.e(e, "Failed to validate attendance eligibility")
-                onResult(false, "Validation failed: ${e.message}")
+                Timber.e(e, "Error checking subject status")
+                onResult(false, "Error checking subject status: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Refresh all attendance data for current student
+     */
+    private fun refreshAttendanceData(rollNumber: String) {
+        viewModelScope.launch {
+            try {
+                // Refresh history
+                val historyResult = attendanceRepository.getAttendanceHistory(rollNumber)
+                if (historyResult.isSuccess) {
+                    _attendanceHistory.value = historyResult.getOrNull() ?: emptyList()
+                }
+
+                // Refresh stats
+                val statsResult = attendanceRepository.getAttendanceStats(rollNumber)
+                if (statsResult.isSuccess) {
+                    _attendanceStats.value = statsResult.getOrNull()
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error refreshing attendance data")
+            }
+        }
+    }
+
+    /**
+     * Get today's attendance for display
+     */
+    fun getTodayAttendance(): List<AttendanceRecord> {
+        return _attendanceHistory.value.filter { it.isToday() }
+    }
+
+    /**
+     * Get attendance for specific subject
+     */
+    fun getAttendanceForSubject(subjectCode: String): List<AttendanceRecord> {
+        return _attendanceHistory.value.filter { it.subjectCode == subjectCode }
+    }
+
+    /**
+     * Clear attendance data (for logout/reset)
+     */
+    fun clearAttendanceData() {
+        _attendanceHistory.value = emptyList()
+        _attendanceStats.value = null
+    }
+
+    /**
+     * Initialize ViewModel - sync profile and load data
+     */
+    fun initialize() {
+        viewModelScope.launch {
+            try {
+                val profileData = profileRepository.profileData.first()
+
+                if (profileData.rollNumber.isNotBlank() && profileData.name.isNotBlank()) {
+                    // Sync profile with Firebase
+                    syncStudentProfile()
+
+                    // Load attendance data
+                    loadAttendanceHistory()
+                    loadAttendanceStats()
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error initializing AttendanceViewModel")
             }
         }
     }
 }
-
-// Data class for attendance records
-data class AttendanceRecord(
-    val rollNumber: String,
-    val subjectCode: String,
-    val timestamp: String,
-    val status: String,
-    val verificationMethod: String = "FACE_RECOGNITION",
-    val location: String? = null
-)

@@ -127,7 +127,7 @@ class BleRepository(private val context: Context) {
                             // The manufacturer data contains the subject code directly
                             // ESP32 code adds manufacturer ID (2 bytes) + subject code
                             if (data.size > 2) {
-                                extractedSubjectCode = String(data.copyOfRange(2, data.size), Charsets.UTF_8).trim()
+                                extractedSubjectCode = String(data.copyOfRange(0, data.size), Charsets.UTF_8).trim()
                                 Timber.d("Extracted subject code from 0xFFFF: $extractedSubjectCode")
                             }
                         } catch (e: Exception) {
