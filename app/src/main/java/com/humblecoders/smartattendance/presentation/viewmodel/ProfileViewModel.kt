@@ -12,13 +12,19 @@ class ProfileViewModel(
     private val profileRepository: ProfileRepository
 ) : ViewModel() {
 
+    private val _immediateProfileData = MutableStateFlow<ProfileData?>(null)
+
     // Profile data from repository
-    val profileData: StateFlow<ProfileData> = profileRepository.profileData
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = ProfileData()
-        )
+    val profileData: StateFlow<ProfileData> = combine(
+        profileRepository.profileData,
+        _immediateProfileData
+    ) { repoData, immediateData ->
+        immediateData ?: repoData
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ProfileData()
+    )
 
     // Local state for form inputs
     private val _nameInput = MutableStateFlow("")
@@ -112,33 +118,26 @@ class ProfileViewModel(
             try {
                 Timber.d("ProfileViewModel - Updating face registration status to: $isRegistered")
 
-                // Update in repository
+                // IMMEDIATELY update UI state
+                val currentProfile = profileData.value
+                _immediateProfileData.value = currentProfile.copy(isFaceRegistered = isRegistered)
+
+                // Then update DataStore in background
                 profileRepository.updateFaceRegistrationStatus(isRegistered)
 
-                // Wait a moment for DataStore to propagate changes
-                kotlinx.coroutines.delay(100)
-
-                // Verify the update was successful by checking current state
-                val currentStatus = profileRepository.getFaceRegistrationStatus()
-                Timber.d("ProfileViewModel - Face registration status verification: expected=$isRegistered, actual=$currentStatus")
-
-                if (currentStatus == isRegistered) {
-                    Timber.i("ProfileViewModel - Face registration status successfully updated to: $isRegistered")
-                    onSuccess()
-                } else {
-                    val errorMsg = "Face registration status update verification failed. Expected: $isRegistered, Got: $currentStatus"
-                    Timber.e(errorMsg)
-                    onError(errorMsg)
-                }
+                Timber.i("ProfileViewModel - Face registration status updated to: $isRegistered")
+                onSuccess()
 
             } catch (e: Exception) {
                 val errorMsg = "Failed to update face registration status: ${e.message}"
                 Timber.e(e, "ProfileViewModel - $errorMsg")
+
+                // Revert immediate state on error
+                _immediateProfileData.value = null
                 onError(errorMsg)
             }
         }
     }
-
     /**
      * Delete all faces - resets face registration status in the app
      * This should be called after Face.io deletion is complete
@@ -272,6 +271,20 @@ class ProfileViewModel(
                 Timber.d("ProfileViewModel - Force refreshed profile data: ${getProfileSummary()}")
             } catch (e: Exception) {
                 Timber.e(e, "ProfileViewModel - Failed to refresh profile data")
+            }
+        }
+    }
+
+    // Add this method to ProfileViewModel.kt
+
+    fun forceRefreshProfile() {
+        viewModelScope.launch {
+            try {
+                // Force re-read from DataStore
+                profileRepository.profileData.first()
+                Timber.d("ProfileViewModel - Force refreshed profile data")
+            } catch (e: Exception) {
+                Timber.e(e, "ProfileViewModel - Failed to force refresh profile data")
             }
         }
     }

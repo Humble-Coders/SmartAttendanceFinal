@@ -15,20 +15,31 @@ import com.humblecoders.smartattendance.presentation.components.FaceIoWebView
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import com.humblecoders.smartattendance.utils.SettingsUtil
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FaceRegistrationScreen(
     profileViewModel: ProfileViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onFaceRegistrationSuccess: () -> Unit
 ) {
     val profileData by profileViewModel.profileData.collectAsState()
-    var showSuccess by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var hasCameraPermission by remember { mutableStateOf(false) }
     var permissionDenied by remember { mutableStateOf(false) }
     var isProcessingRegistration by remember { mutableStateOf(false) }
+    var shouldNavigate by remember { mutableStateOf(false) }
+    var hasRegistered by remember { mutableStateOf(false) } // Add guard flag
+
+    // Handle navigation when shouldNavigate becomes true
+    LaunchedEffect(shouldNavigate) {
+        if (shouldNavigate) {
+            delay(1500) // Short delay to show success message
+            onFaceRegistrationSuccess()
+        }
+    }
 
     // Handle camera permission
     CameraPermissionHandler(
@@ -68,7 +79,6 @@ fun FaceRegistrationScreen(
                     // Show permission denied message
                     PermissionDeniedContent(
                         onRetry = {
-                            // This will trigger permission request again
                             permissionDenied = false
                         },
                         onCancel = onNavigateBack
@@ -107,24 +117,18 @@ fun FaceRegistrationScreen(
                                 CircularProgressIndicator()
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "Processing Registration...",
+                                    text = "Registration Successful!",
                                     style = MaterialTheme.typography.titleMedium
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "Please wait while we save your face data",
+                                    text = "Returning to profile...",
                                     style = MaterialTheme.typography.bodyMedium,
                                     textAlign = TextAlign.Center
                                 )
                             }
                         }
                     }
-                }
-                showSuccess -> {
-                    // Show success message
-                    SuccessContent(
-                        onDone = onNavigateBack
-                    )
                 }
                 errorMessage != null -> {
                     // Show error message
@@ -137,28 +141,23 @@ fun FaceRegistrationScreen(
                     )
                 }
                 else -> {
-                    // Show Face.io WebView only when camera permission is granted
+                    // Show Face.io WebView
                     FaceIoWebView(
                         modifier = Modifier.fillMaxSize(),
                         rollNumber = profileData.rollNumber,
                         onFaceRegistered = { faceId ->
-                            Timber.d("FaceRegistrationScreen - Face registered with ID: $faceId")
-                            isProcessingRegistration = true
+                            // Prevent multiple callbacks
+                            if (!hasRegistered) {
+                                hasRegistered = true
+                                Timber.d("FaceRegistrationScreen - Face registered with ID: $faceId")
+                                isProcessingRegistration = true
 
-                            // Update face registration status with comprehensive error handling
-                            profileViewModel.updateFaceRegistrationStatus(
-                                isRegistered = true,
-                                onSuccess = {
-                                    Timber.i("FaceRegistrationScreen - Face registration status updated successfully")
-                                    isProcessingRegistration = false
-                                    showSuccess = true
-                                },
-                                onError = { error ->
-                                    Timber.e("FaceRegistrationScreen - Failed to update registration status: $error")
-                                    isProcessingRegistration = false
-                                    errorMessage = "Registration successful but failed to save status: $error"
-                                }
-                            )
+                                // Update DataStore in background (optional)
+                                profileViewModel.updateFaceRegistrationStatus(true)
+
+                                // Trigger navigation
+                                shouldNavigate = true
+                            }
                         },
                         onError = { error ->
                             Timber.e("FaceRegistrationScreen - Face registration error: $error")

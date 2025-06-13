@@ -37,9 +37,13 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.Profile.route) {
+        // Updated Profile route with parameter
+        composable(Screen.Profile.route) { navBackStackEntry ->
+            val faceRegisteredParam = navBackStackEntry.arguments?.getString("faceRegistered")?.toBoolean() ?: false
+
             ProfileScreen(
                 profileViewModel = profileViewModel,
+                faceRegisteredFromNav = faceRegisteredParam,
                 onNavigateBack = {
                     navController.popBackStack()
                 },
@@ -54,6 +58,12 @@ fun AppNavigation(
                 profileViewModel = profileViewModel,
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onFaceRegistrationSuccess = {
+                    // Navigate to profile with face registered parameter
+                    navController.navigate(Screen.Profile.createRoute(faceRegistered = true)) {
+                        popUpTo(Screen.FaceRegistration.route) { inclusive = true }
+                    }
                 }
             )
         }
@@ -71,7 +81,9 @@ fun AppNavigation(
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    object Profile : Screen("profile")
+    object Profile : Screen("profile?faceRegistered={faceRegistered}") {
+        fun createRoute(faceRegistered: Boolean = false) = "profile?faceRegistered=$faceRegistered"
+    }
     object FaceRegistration : Screen("face_registration")
     object AttendanceMarking : Screen("attendance_marking")
 }

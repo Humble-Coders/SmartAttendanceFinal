@@ -15,10 +15,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 
+// Update ProfileScreen function signature and face registration display logic
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     profileViewModel: ProfileViewModel,
+    faceRegisteredFromNav: Boolean = false, // Add this parameter
     onNavigateBack: () -> Unit,
     onFaceRegistrationClick: () -> Unit
 ) {
@@ -28,6 +31,13 @@ fun ProfileScreen(
     val isSaving by profileViewModel.isSaving.collectAsState()
     val isFormInitialized by profileViewModel.isFormInitialized.collectAsState()
     val isProfileSaved by profileViewModel.isProfileSaved.collectAsState()
+
+    // Override face registration status if coming from navigation
+    val displayProfileData = if (faceRegisteredFromNav) {
+        profileData.copy(isFaceRegistered = true)
+    } else {
+        profileData
+    }
 
     // Local state for UI feedback
     var showSaveSuccess by remember { mutableStateOf(false) }
@@ -216,12 +226,12 @@ fun ProfileScreen(
                     }
                 }
 
-                // Face Registration Section
+                // Face Registration Section - Use displayProfileData instead of profileData
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (profileData.isFaceRegistered) {
+                        containerColor = if (displayProfileData.isFaceRegistered) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant
@@ -239,13 +249,13 @@ fun ProfileScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = if (profileData.isFaceRegistered) {
+                                imageVector = if (displayProfileData.isFaceRegistered) {
                                     Icons.Default.Check
                                 } else {
                                     Icons.Default.Close
                                 },
                                 contentDescription = null,
-                                tint = if (profileData.isFaceRegistered) {
+                                tint = if (displayProfileData.isFaceRegistered) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.error
@@ -255,7 +265,7 @@ fun ProfileScreen(
                             Spacer(modifier = Modifier.width(8.dp))
 
                             Text(
-                                text = if (profileData.isFaceRegistered) {
+                                text = if (displayProfileData.isFaceRegistered) {
                                     "Face Registered"
                                 } else {
                                     "Face Not Registered"
@@ -265,8 +275,8 @@ fun ProfileScreen(
                         }
 
                         Text(
-                            text = if (profileData.isFaceRegistered) {
-                                "Your face has been registered for attendance\nRoll Number: ${profileData.rollNumber}"
+                            text = if (displayProfileData.isFaceRegistered) {
+                                "Your face has been registered for attendance\nRoll Number: ${displayProfileData.rollNumber}"
                             } else {
                                 "Register your face to enable attendance marking"
                             },
@@ -274,7 +284,7 @@ fun ProfileScreen(
                             textAlign = TextAlign.Center
                         )
 
-                        if (!profileData.isFaceRegistered) {
+                        if (!displayProfileData.isFaceRegistered) {
                             if (!isProfileSaved) {
                                 Text(
                                     text = "Please save your profile first",
@@ -304,7 +314,7 @@ fun ProfileScreen(
                     }
                 }
 
-                // Profile Summary (show current saved data)
+                // Profile Summary (show current saved data) - Use displayProfileData
                 if (isProfileSaved) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -324,17 +334,17 @@ fun ProfileScreen(
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Text(
-                                text = "Name: ${profileData.name}",
+                                text = "Name: ${displayProfileData.name}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Text(
-                                text = "Roll Number: ${profileData.rollNumber}",
+                                text = "Roll Number: ${displayProfileData.rollNumber}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Text(
-                                text = "Face Status: ${if (profileData.isFaceRegistered) "Registered" else "Not Registered"}",
+                                text = "Face Status: ${if (displayProfileData.isFaceRegistered) "Registered" else "Not Registered"}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
