@@ -1,13 +1,13 @@
-// Replace your existing MainActivity.kt with this:
-
 package com.humblecoders.smartattendance
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.FirebaseApp
@@ -37,18 +37,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Enable edge-to-edge display
+        enableEdgeToEdge()
+
         // Initialize Firebase
         initializeFirebase()
 
         // Initialize repositories
-        bleRepository = BleRepository(applicationContext)
-        profileRepository = ProfileRepository(applicationContext)
-        attendanceRepository = AttendanceRepository()
+        initializeRepositories()
 
-        // Initialize ViewModels with repositories
-        bleViewModel = BleViewModel(bleRepository)
-        profileViewModel = ProfileViewModel(profileRepository)
-        attendanceViewModel = AttendanceViewModel(attendanceRepository, profileRepository)
+        // Initialize ViewModels
+        initializeViewModels()
 
         // Initialize attendance ViewModel
         attendanceViewModel.initialize()
@@ -73,13 +72,38 @@ class MainActivity : ComponentActivity() {
         try {
             // Initialize Firebase
             FirebaseApp.initializeApp(this)
-            Timber.d("Firebase initialized successfully")
+            Timber.d("🔥 Firebase initialized successfully")
 
             // Test Firebase connection (optional)
             testFirebaseConnection()
 
         } catch (e: Exception) {
-            Timber.e(e, "Failed to initialize Firebase")
+            Timber.e(e, "🔥 Failed to initialize Firebase")
+        }
+    }
+
+    private fun initializeRepositories() {
+        try {
+            bleRepository = BleRepository(applicationContext)
+            profileRepository = ProfileRepository(applicationContext)
+            attendanceRepository = AttendanceRepository()
+
+            Timber.d("📦 All repositories initialized successfully")
+        } catch (e: Exception) {
+            Timber.e(e, "📦 Failed to initialize repositories")
+        }
+    }
+
+    private fun initializeViewModels() {
+        try {
+            // Initialize ViewModels with repositories
+            bleViewModel = BleViewModel(bleRepository)
+            profileViewModel = ProfileViewModel(profileRepository)
+            attendanceViewModel = AttendanceViewModel(attendanceRepository, profileRepository)
+
+            Timber.d("🎭 All ViewModels initialized successfully")
+        } catch (e: Exception) {
+            Timber.e(e, "🎭 Failed to initialize ViewModels")
         }
     }
 
@@ -87,23 +111,61 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 // This is a simple test to ensure Firebase is working
-                // You can remove this in production
-                Timber.d("Testing Firebase connection...")
+                Timber.d("🔥 Testing Firebase connection...")
 
-                // The actual connection test will happen when we try to write data
-                Timber.d("Firebase connection test completed")
+                // The actual connection test will happen when we try to read/write data
+                Timber.d("🔥 Firebase connection test completed")
 
             } catch (e: Exception) {
-                Timber.e(e, "Firebase connection test failed")
+                Timber.e(e, "🔥 Firebase connection test failed")
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Timber.d("📱 MainActivity: onResume - App became active")
+
+        // Reinitialize BLE if needed
+        if (::bleViewModel.isInitialized) {
+            bleViewModel.initializeBle()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Timber.d("📱 MainActivity: onPause - App going to background")
+
+        // Optionally pause BLE scanning to save battery
+        if (::bleViewModel.isInitialized) {
+            bleViewModel.stopScanning()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        Timber.d("📱 MainActivity: onDestroy - Cleaning up resources")
+
         // Clean up BLE scanning
         if (::bleViewModel.isInitialized) {
             bleViewModel.stopScanning()
         }
+
+        // Clear attendance data
+        if (::attendanceViewModel.isInitialized) {
+            attendanceViewModel.clearAttendanceData()
+        }
+    }
+
+    /**
+     * Handle back button press
+     */
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        Timber.d("📱 MainActivity: Back button pressed")
+
+        // Let the navigation component handle back navigation
+        // The new navigation system will handle this automatically
+        super.onBackPressed()
     }
 }

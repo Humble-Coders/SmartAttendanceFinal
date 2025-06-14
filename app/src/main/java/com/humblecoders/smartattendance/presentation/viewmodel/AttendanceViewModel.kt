@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.humblecoders.smartattendance.data.repository.AttendanceRepository
 import com.humblecoders.smartattendance.data.repository.ProfileRepository
 import com.humblecoders.smartattendance.data.model.AttendanceRecord
-import com.humblecoders.smartattendance.data.repository.AttendanceStats
+import com.humblecoders.smartattendance.data.model.SessionCheckResult
+import com.humblecoders.smartattendance.data.model.ActiveSession
+import com.humblecoders.smartattendance.data.model.AttendanceStats
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,13 +30,45 @@ class AttendanceViewModel(
     private val _attendanceStats = MutableStateFlow<AttendanceStats?>(null)
     val attendanceStats: StateFlow<AttendanceStats?> = _attendanceStats.asStateFlow()
 
+    // Session state
+    private val _currentSession = MutableStateFlow<ActiveSession?>(null)
+    val currentSession: StateFlow<ActiveSession?> = _currentSession.asStateFlow()
+
+    private val _isSessionActive = MutableStateFlow(false)
+    val isSessionActive: StateFlow<Boolean> = _isSessionActive.asStateFlow()
+
+    private val _isCheckingSession = MutableStateFlow(false)
+    val isCheckingSession: StateFlow<Boolean> = _isCheckingSession.asStateFlow()
+
     /**
-     * Mark attendance with comprehensive validation and Firebase integration
-     * FIX: Updated to handle new error handling from repository
+     * Check if there's an active session for the student's class
+     */
+    fun isRoomMatching(detectedRoom: String): Boolean {
+        val session = _currentSession.value
+        if (session == null) return false
+
+        // Remove the 3 digits from detected room for comparison
+        val roomName = if (detectedRoom.length >= 3) {
+            val suffix = detectedRoom.takeLast(3)
+            if (suffix.all { it.isDigit() }) {
+                detectedRoom.dropLast(3)
+            } else {
+                detectedRoom
+            }
+        } else {
+            detectedRoom
+        }
+
+        val matches = session.room.equals(roomName, ignoreCase = true)
+        Timber.d("🏢 Room matching: session.room='${session.room}', detectedRoom='$detectedRoom', extractedRoom='$roomName', matches=$matches")
+        return matches
+    }
+    /**
+     * Mark attendance with the new structure (updated to use session data)
      */
     fun markAttendance(
         rollNumber: String,
-        subjectCode: String = "Unknown",
+        deviceRoom: String = "",
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
@@ -43,17 +77,36 @@ class AttendanceViewModel(
 
             try {
                 Timber.d("🎯 AttendanceViewModel: Starting attendance marking")
-                Timber.d("📋 Parameters: rollNumber=$rollNumber, subjectCode=$subjectCode")
+                Timber.d("📋 Parameters: rollNumber=$rollNumber, deviceRoom=$deviceRoom")
 
                 // Get student profile data
                 val profileData = profileRepository.profileData.first()
                 val studentName = profileData.name.ifBlank { "Unknown Student" }
+                val className = profileData.className
 
-                Timber.d("👤 Student info: name=$studentName, rollNumber from profile=${profileData.rollNumber}")
+                if (className.isBlank()) {
+                    onError("No class information available in profile")
+                    return@launch
+                }
+
+                // Get current session data
+                val session = _currentSession.value
+                if (session == null) {
+                    onError("No active session found")
+                    return@launch
+                }
+
+                Timber.d("👤 Student info: name=$studentName, rollNumber=$rollNumber, class=$className")
+                Timber.d("📚 Session info: subject=${session.subject}, room=${session.room}, type=${session.type}")
 
                 // Validate attendance eligibility
                 Timber.d("🔍 Validating attendance eligibility...")
-                val eligibilityResult = attendanceRepository.validateAttendanceEligibility(rollNumber, subjectCode)
+                val eligibilityResult = attendanceRepository.validateAttendanceEligibility(
+                    rollNumber = rollNumber,
+                    subject = session.subject,
+                    group = className,
+                    type = session.type
+                )
 
                 if (eligibilityResult.isFailure) {
                     val error = "Failed to validate attendance eligibility"
@@ -71,16 +124,17 @@ class AttendanceViewModel(
 
                 Timber.d("✅ Eligibility check passed, proceeding to mark attendance")
 
-                // Mark attendance
+                // Mark attendance with session data
                 Timber.d("📡 Calling repository to mark attendance...")
                 val result = attendanceRepository.markAttendance(
                     rollNumber = rollNumber,
                     studentName = studentName,
-                    subjectCode = subjectCode,
-                    location = "Mobile App" // You can add location detection later
+                    subject = session.subject,
+                    group = className,
+                    type = session.type,
+                    deviceRoom = deviceRoom
                 )
 
-                // FIX: Handle new error handling properly
                 if (result.isSuccess) {
                     val response = result.getOrNull()!!
                     Timber.i("🎉 Attendance marked successfully: ${response.attendanceId}")
@@ -104,6 +158,66 @@ class AttendanceViewModel(
             }
         }
     }
+
+    /**
+     * Check if there's an active session for the student's class (overloaded for UI)
+     */
+    fun checkActiveSession(
+        className: String,
+        onResult: (Boolean, String, String, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isCheckingSession.value = true
+
+            try {
+                Timber.d("🔍 AttendanceViewModel: Checking active session for class: $className")
+
+                if (className.isBlank()) {
+                    Timber.w("⚠️ No class name provided")
+                    onResult(false, "", "", "")
+                    return@launch
+                }
+
+                val result = attendanceRepository.checkActiveSession(className)
+
+                if (result.isSuccess) {
+                    val sessionResult = result.getOrNull()!!
+                    _isSessionActive.value = sessionResult.isActive
+                    _currentSession.value = sessionResult.session
+
+                    if (sessionResult.isActive && sessionResult.session != null) {
+                        val session = sessionResult.session!!
+                        Timber.d("✅ Active session found: ${session.subject} in ${session.room}")
+                        onResult(true, session.subject, session.room, session.type)
+                    } else {
+                        Timber.d("⚪ No active session for class: $className")
+                        onResult(false, "", "", "")
+                    }
+                } else {
+                    Timber.e("❌ Failed to check session: ${result.exceptionOrNull()}")
+                    _isSessionActive.value = false
+                    _currentSession.value = null
+                    onResult(false, "", "", "")
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Error checking active session for class: $className")
+                _isSessionActive.value = false
+                _currentSession.value = null
+                onResult(false, "", "", "")
+            } finally {
+                _isCheckingSession.value = false
+            }
+        }
+    }
+    fun getCurrentSessionInfo(): Triple<String?, String?, String?> {
+        val session = _currentSession.value
+        return Triple(session?.subject, session?.room, session?.type)
+    }
+
+    /**
+     * Check if room matches the detected device room
+     */
 
     /**
      * Load attendance history for current student
@@ -236,40 +350,6 @@ class AttendanceViewModel(
     }
 
     /**
-     * Check if subject is currently active for attendance
-     */
-    fun checkSubjectStatus(
-        subjectCode: String,
-        onResult: (Boolean, String) -> Unit
-    ) {
-        viewModelScope.launch {
-            try {
-                Timber.d("🔍 Checking subject status for $subjectCode")
-
-                val result = attendanceRepository.isSubjectActive(subjectCode)
-
-                if (result.isSuccess) {
-                    val isActive = result.getOrNull() ?: false
-                    val message = if (isActive) {
-                        "Subject is active for attendance"
-                    } else {
-                        "Subject is not currently active for attendance"
-                    }
-                    Timber.d("✅ Subject status checked: $message")
-                    onResult(isActive, message)
-                } else {
-                    Timber.e("❌ Failed to check subject status: ${result.exceptionOrNull()}")
-                    onResult(false, "Failed to check subject status")
-                }
-
-            } catch (e: Exception) {
-                Timber.e(e, "💥 Error checking subject status")
-                onResult(false, "Error checking subject status: ${e.message}")
-            }
-        }
-    }
-
-    /**
      * Refresh all attendance data for current student
      */
     private fun refreshAttendanceData(rollNumber: String) {
@@ -312,7 +392,7 @@ class AttendanceViewModel(
      * Get attendance for specific subject
      */
     fun getAttendanceForSubject(subjectCode: String): List<AttendanceRecord> {
-        return _attendanceHistory.value.filter { it.subjectCode == subjectCode }
+        return _attendanceHistory.value.filter { it.subject == subjectCode }
     }
 
     /**
@@ -321,6 +401,8 @@ class AttendanceViewModel(
     fun clearAttendanceData() {
         _attendanceHistory.value = emptyList()
         _attendanceStats.value = null
+        _currentSession.value = null
+        _isSessionActive.value = false
         Timber.d("🧹 Cleared attendance data")
     }
 
@@ -343,12 +425,79 @@ class AttendanceViewModel(
                     // Load attendance data
                     loadAttendanceHistory()
                     loadAttendanceStats()
+
+                    // Check active session if class is available
+                    if (profileData.className.isNotBlank()) {
+                        checkActiveSession()
+                    }
                 } else {
                     Timber.w("⚠️ Profile data incomplete, skipping attendance data loading")
                 }
 
             } catch (e: Exception) {
                 Timber.e(e, "💥 Error initializing AttendanceViewModel")
+            }
+        }
+    }
+
+    fun checkActiveSession(onResult: (SessionCheckResult) -> Unit = {}) {
+        viewModelScope.launch {
+            _isCheckingSession.value = true
+
+            try {
+                Timber.d("🔍 AttendanceViewModel: Checking active session")
+
+                val profileData = profileRepository.profileData.first()
+                val className = profileData.className
+
+                if (className.isBlank()) {
+                    Timber.w("⚠️ No class name available in profile")
+                    val result = SessionCheckResult(
+                        isActive = false,
+                        message = "No class information available"
+                    )
+                    _isSessionActive.value = false
+                    _currentSession.value = null
+                    onResult(result)
+                    return@launch
+                }
+
+                Timber.d("📋 Checking session for class: $className")
+                val result = attendanceRepository.checkActiveSession(className)
+
+                if (result.isSuccess) {
+                    val sessionResult = result.getOrNull()!!
+                    _isSessionActive.value = sessionResult.isActive
+                    _currentSession.value = sessionResult.session
+
+                    Timber.d("✅ Session check completed: isActive=${sessionResult.isActive}")
+                    if (sessionResult.isActive && sessionResult.session != null) {
+                        Timber.d("📚 Active session details: ${sessionResult.session}")
+                    }
+
+                    onResult(sessionResult)
+                } else {
+                    Timber.e("❌ Failed to check session: ${result.exceptionOrNull()}")
+                    val errorResult = SessionCheckResult(
+                        isActive = false,
+                        message = "Failed to check session status"
+                    )
+                    _isSessionActive.value = false
+                    _currentSession.value = null
+                    onResult(errorResult)
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Error checking active session")
+                val errorResult = SessionCheckResult(
+                    isActive = false,
+                    message = "Error checking session: ${e.message}"
+                )
+                _isSessionActive.value = false
+                _currentSession.value = null
+                onResult(errorResult)
+            } finally {
+                _isCheckingSession.value = false
             }
         }
     }

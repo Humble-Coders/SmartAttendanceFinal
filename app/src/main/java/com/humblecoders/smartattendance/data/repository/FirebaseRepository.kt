@@ -1,5 +1,3 @@
-// Replace your existing FirebaseRepository.kt with this:
-
 package com.humblecoders.smartattendance.data.repository
 
 import com.google.firebase.firestore.FirebaseFirestore
@@ -9,91 +7,92 @@ import com.humblecoders.smartattendance.data.model.*
 import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import java.time.LocalDateTime
-import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.*
 
 class FirebaseRepository {
 
     private val firestore = FirebaseFirestore.getInstance()
 
-    // Collections
-    private val studentsCollection = firestore.collection("students")
-    private val subjectsCollection = firestore.collection("subjects")
-    private val attendanceCollection = firestore.collection("attendance_records")
+    // New collections for the updated structure
+    private val activeSessionsCollection = firestore.collection("activeSessions")
+
+    // For monthly attendance collections (format: attendance_YYYY_MM)
+    private fun getAttendanceCollection(year: Int, month: Int): com.google.firebase.firestore.CollectionReference {
+        val collectionName = "attendance_${year}_${String.format("%02d", month)}"
+        return firestore.collection(collectionName)
+    }
+
+    // For current month attendance
+    private fun getCurrentAttendanceCollection(): com.google.firebase.firestore.CollectionReference {
+        val now = LocalDateTime.now()
+        return getAttendanceCollection(now.year, now.monthValue)
+    }
 
     init {
-        Timber.d("🔧 FirebaseRepository initialized")
+        Timber.d("🔧 FirebaseRepository initialized with new structure")
         Timber.d("📊 Firestore instance: ${firestore.app.name}")
     }
 
     /**
-     * Register/Update student profile in Firebase
+     * Check if there's an active session for the student's class
      */
-    suspend fun saveStudentProfile(student: Student): Result<String> {
+    suspend fun checkActiveSession(className: String): Result<SessionCheckResult> {
         return try {
-            Timber.d("👤 Saving student profile: ${student.rollNumber}")
+            Timber.d("🔍 Checking active session for class: $className")
 
-            studentsCollection.document(student.rollNumber)
-                .set(student.copy(updatedAt = Timestamp.now()))
-                .await()
+            val document = activeSessionsCollection.document(className).get().await()
 
-            Timber.d("✅ Student profile saved successfully: ${student.rollNumber}")
-            Result.success("Profile saved successfully")
+            if (document.exists()) {
+                val session = document.toObject(ActiveSession::class.java)
+                Timber.d("📄 Session document found for $session")
+
+                if (session != null && session.isActive) {
+                    Timber.d("✅ Active session found for $className: ${session.subject} in ${session.room}")
+                    Result.success(SessionCheckResult(
+                        isActive = true,
+                        session = session,
+                        message = "Active session found"
+                    ))
+                } else {
+                    Timber.d("⚪ Session exists but not active for $className")
+                    Result.success(SessionCheckResult(
+                        isActive = false,
+                        message = "No active session"
+                    ))
+                }
+            } else {
+                Timber.d("⚪ No session document found for $className")
+                Result.success(SessionCheckResult(
+                    isActive = false,
+                    message = "No session found"
+                ))
+            }
         } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to save student profile: ${student.rollNumber}")
+            Timber.e(e, "❌ Failed to check active session for $className")
             Result.failure(e)
         }
     }
 
     /**
-     * Get student profile by roll number
+     * Check if attendance already marked today for student in subject
      */
-    suspend fun getStudentProfile(rollNumber: String): Result<Student?> {
+    suspend fun isAttendanceAlreadyMarked(
+        rollNumber: String,
+        subject: String,
+        group: String,
+        type: String
+    ): Result<Boolean> {
         return try {
-            Timber.d("🔍 Retrieving student profile: $rollNumber")
+            val today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+            Timber.d("🔍 Checking if attendance already marked for $rollNumber in $subject on $today")
 
-            val document = studentsCollection.document(rollNumber).get().await()
-            val student = document.toObject(Student::class.java)
-
-            Timber.d("✅ Retrieved student profile: $rollNumber, exists: ${student != null}")
-            Result.success(student)
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to get student profile: $rollNumber")
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Check if subject is active and attendance is allowed
-     */
-    suspend fun isSubjectActiveForAttendance(subjectCode: String): Result<Boolean> {
-        return try {
-            Timber.d("🔍 Checking subject active status: $subjectCode")
-
-            val document = subjectsCollection.document(subjectCode).get().await()
-            val subject = document.toObject(Subject::class.java)
-
-            val isActive = subject?.isActive ?: false
-            Timber.d("✅ Subject $subjectCode active status: $isActive")
-
-            Result.success(isActive)
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to check subject status: $subjectCode")
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Check if attendance already marked today for student and subject
-     */
-    suspend fun isAttendanceAlreadyMarked(rollNumber: String, subjectCode: String): Result<Boolean> {
-        return try {
-            val today = LocalDateTime.now().toLocalDate().toString()
-            Timber.d("🔍 Checking if attendance already marked for $rollNumber in $subjectCode on $today")
-
+            val attendanceCollection = getCurrentAttendanceCollection()
             val query = attendanceCollection
                 .whereEqualTo("rollNumber", rollNumber)
-                .whereEqualTo("subjectCode", subjectCode)
+                .whereEqualTo("subject", subject)
+                .whereEqualTo("group", group)
+                .whereEqualTo("type", type)
                 .whereEqualTo("date", today)
                 .limit(1)
 
@@ -103,26 +102,31 @@ class FirebaseRepository {
             Timber.d("✅ Attendance already marked check: $alreadyMarked (found ${documents.size()} records)")
             Result.success(alreadyMarked)
         } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to check existing attendance for $rollNumber in $subjectCode")
+            Timber.e(e, "❌ Failed to check existing attendance for $rollNumber")
             Result.failure(e)
         }
     }
 
     /**
-     * Mark attendance for student
-     * FIX: Enhanced logging and better error handling
+     * Mark attendance in the new structure
      */
-    suspend fun markAttendance(request: MarkAttendanceRequest): Result<AttendanceResponse> {
+    suspend fun markAttendance(
+        rollNumber: String,
+        studentName: String,
+        subject: String,
+        group: String,
+        type: String,
+        deviceRoom: String
+    ): Result<AttendanceResponse> {
         return try {
             Timber.d("🚀 Starting Firebase attendance marking process")
-            Timber.d("📋 Request details: $request")
+            Timber.d("📋 Details: $rollNumber, $subject, $group, $type")
+
+            val today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
             // Check if already marked today
-            Timber.d("🔍 Checking for duplicate attendance...")
-            val alreadyMarkedResult = isAttendanceAlreadyMarked(request.rollNumber, request.subjectCode)
-
+            val alreadyMarkedResult = isAttendanceAlreadyMarked(rollNumber, subject, group, type)
             if (alreadyMarkedResult.isFailure) {
-                Timber.e("❌ Failed to verify existing attendance: ${alreadyMarkedResult.exceptionOrNull()}")
                 return Result.success(AttendanceResponse(
                     success = false,
                     message = "Failed to verify existing attendance"
@@ -139,34 +143,26 @@ class FirebaseRepository {
             }
 
             // Create attendance record
-            val attendanceId = UUID.randomUUID().toString()
             val currentTime = Timestamp.now()
-            val today = LocalDateTime.now().toLocalDate().toString()
-
             val attendanceRecord = AttendanceRecord(
-                id = attendanceId,
-                rollNumber = request.rollNumber,
-                studentName = request.studentName,
-                subjectCode = request.subjectCode,
-                timestamp = currentTime,
                 date = today,
-                status = "PRESENT",
-                verificationMethod = request.verificationMethod,
-                location = request.location,
-                deviceId = android.os.Build.MODEL // Device info
+                rollNumber = rollNumber,
+                subject = subject,
+                group = group,
+                type = type,
+                present = true,
+                timestamp = currentTime,
+                deviceRoom = deviceRoom
             )
 
             Timber.d("📝 Created attendance record: $attendanceRecord")
 
-            // Save to Firestore
-            Timber.d("💾 Saving to Firestore collection: attendance_records")
-            Timber.d("📄 Document ID: $attendanceId")
+            // Save to current month's collection with auto-generated ID
+            val attendanceCollection = getCurrentAttendanceCollection()
+            val documentRef = attendanceCollection.add(attendanceRecord).await()
+            val attendanceId = documentRef.id
 
-            attendanceCollection.document(attendanceId)
-                .set(attendanceRecord)
-                .await()
-
-            Timber.i("🎉 Attendance marked successfully: $attendanceId for ${request.rollNumber}")
+            Timber.i("🎉 Attendance marked successfully: $attendanceId for $rollNumber")
 
             Result.success(AttendanceResponse(
                 success = true,
@@ -176,10 +172,6 @@ class FirebaseRepository {
 
         } catch (e: Exception) {
             Timber.e(e, "💥 Failed to mark attendance in Firebase")
-            Timber.e("❌ Exception type: ${e.javaClass.simpleName}")
-            Timber.e("❌ Exception message: ${e.message}")
-
-            // FIX: Return success with failure details (as expected by repository)
             Result.success(AttendanceResponse(
                 success = false,
                 message = "Firebase error: ${e.message}"
@@ -188,7 +180,7 @@ class FirebaseRepository {
     }
 
     /**
-     * Get attendance history for a student
+     * Get attendance history for a student (from current and previous months)
      */
     suspend fun getAttendanceHistory(
         rollNumber: String,
@@ -197,13 +189,40 @@ class FirebaseRepository {
         return try {
             Timber.d("📚 Fetching attendance history for $rollNumber (limit: $limit)")
 
-            val query = attendanceCollection
+            val attendanceList = mutableListOf<AttendanceRecord>()
+            val now = LocalDateTime.now()
+
+            // Get attendance from current month
+            var currentCollection = getAttendanceCollection(now.year, now.monthValue)
+            var query = currentCollection
                 .whereEqualTo("rollNumber", rollNumber)
                 .orderBy("timestamp", Query.Direction.DESCENDING)
                 .limit(limit.toLong())
 
-            val documents = query.get().await()
-            val attendanceList = documents.toObjects(AttendanceRecord::class.java)
+            var documents = query.get().await()
+            attendanceList.addAll(documents.toObjects(AttendanceRecord::class.java))
+
+            // If we need more records and haven't reached the limit, get from previous month
+            if (attendanceList.size < limit) {
+                val previousMonth = now.minusMonths(1)
+                val remainingLimit = limit - attendanceList.size
+
+                currentCollection = getAttendanceCollection(previousMonth.year, previousMonth.monthValue)
+                query = currentCollection
+                    .whereEqualTo("rollNumber", rollNumber)
+                    .orderBy("timestamp", Query.Direction.DESCENDING)
+                    .limit(remainingLimit.toLong())
+
+                try {
+                    documents = query.get().await()
+                    attendanceList.addAll(documents.toObjects(AttendanceRecord::class.java))
+                } catch (e: Exception) {
+                    Timber.w("⚠️ Previous month collection might not exist: ${e.message}")
+                }
+            }
+
+            // Sort by timestamp descending
+            attendanceList.sortByDescending { it.timestamp }
 
             Timber.d("✅ Retrieved ${attendanceList.size} attendance records for $rollNumber")
             Result.success(attendanceList)
@@ -216,21 +235,33 @@ class FirebaseRepository {
     /**
      * Get attendance statistics for a student
      */
-    suspend fun getAttendanceStats(rollNumber: String, subjectCode: String? = null): Result<AttendanceStats> {
+    suspend fun getAttendanceStats(rollNumber: String, subject: String? = null): Result<AttendanceStats> {
         return try {
-            Timber.d("📊 Calculating attendance stats for $rollNumber" + if (subjectCode != null) " in $subjectCode" else "")
+            Timber.d("📊 Calculating attendance stats for $rollNumber" + if (subject != null) " in $subject" else "")
 
-            var query = attendanceCollection.whereEqualTo("rollNumber", rollNumber)
+            val attendanceList = mutableListOf<AttendanceRecord>()
+            val now = LocalDateTime.now()
 
-            if (subjectCode != null) {
-                query = query.whereEqualTo("subjectCode", subjectCode)
+            // Get attendance from current and previous months for more comprehensive stats
+            for (monthOffset in 0..2) { // Current month and 2 previous months
+                val targetMonth = now.minusMonths(monthOffset.toLong())
+                val collection = getAttendanceCollection(targetMonth.year, targetMonth.monthValue)
+
+                var query = collection.whereEqualTo("rollNumber", rollNumber)
+                if (subject != null) {
+                    query = query.whereEqualTo("subject", subject)
+                }
+
+                try {
+                    val documents = query.get().await()
+                    attendanceList.addAll(documents.toObjects(AttendanceRecord::class.java))
+                } catch (e: Exception) {
+                    Timber.w("⚠️ Collection for ${targetMonth.year}-${targetMonth.monthValue} might not exist")
+                }
             }
 
-            val documents = query.get().await()
-            val attendanceList = documents.toObjects(AttendanceRecord::class.java)
-
             val totalClasses = attendanceList.size
-            val presentClasses = attendanceList.count { it.status == "PRESENT" }
+            val presentClasses = attendanceList.count { it.present }
             val percentage = if (totalClasses > 0) {
                 (presentClasses.toFloat() / totalClasses.toFloat() * 100)
             } else 0f
@@ -251,12 +282,33 @@ class FirebaseRepository {
     }
 
     /**
+     * Save or update student profile (keeping for compatibility)
+     */
+    suspend fun saveStudentProfile(student: Student): Result<String> {
+        return try {
+            Timber.d("👤 Saving student profile: ${student.rollNumber}")
+
+            val studentsCollection = firestore.collection("students")
+            studentsCollection.document(student.rollNumber)
+                .set(student.copy(updatedAt = Timestamp.now()))
+                .await()
+
+            Timber.d("✅ Student profile saved successfully: ${student.rollNumber}")
+            Result.success("Profile saved successfully")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save student profile: ${student.rollNumber}")
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Update student's face ID after face registration
      */
     suspend fun updateStudentFaceId(rollNumber: String, faceId: String): Result<String> {
         return try {
             Timber.d("🆔 Updating face ID for student: $rollNumber")
 
+            val studentsCollection = firestore.collection("students")
             studentsCollection.document(rollNumber)
                 .update(
                     mapOf(
@@ -273,30 +325,4 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
-
-    /**
-     * Get subject details
-     */
-    suspend fun getSubjectDetails(subjectCode: String): Result<Subject?> {
-        return try {
-            Timber.d("🔍 Retrieving subject details: $subjectCode")
-
-            val document = subjectsCollection.document(subjectCode).get().await()
-            val subject = document.toObject(Subject::class.java)
-
-            Timber.d("✅ Retrieved subject details: $subjectCode, exists: ${subject != null}")
-            Result.success(subject)
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to get subject details: $subjectCode")
-            Result.failure(e)
-        }
-    }
 }
-
-// Data class for attendance statistics
-data class AttendanceStats(
-    val totalClasses: Int,
-    val presentClasses: Int,
-    val absentClasses: Int,
-    val attendancePercentage: Float
-)

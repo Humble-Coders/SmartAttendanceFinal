@@ -1,7 +1,6 @@
 package com.humblecoders.smartattendance.data.repository
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.content.pm.PackageManager
@@ -18,25 +17,48 @@ class BleRepository(private val context: Context) {
     private val _bleState = MutableStateFlow(BleState.IDLE)
     val bleState: StateFlow<BleState> = _bleState.asStateFlow()
 
-    private val _esp32DeviceFound = MutableStateFlow(false)
-    val esp32DeviceFound: StateFlow<Boolean> = _esp32DeviceFound.asStateFlow()
+    private val _deviceFound = MutableStateFlow(false)
+    val deviceFound: StateFlow<Boolean> = _deviceFound.asStateFlow()
 
-    private val _subjectCode = MutableStateFlow<String?>(null)
-    val subjectCode: StateFlow<String?> = _subjectCode.asStateFlow()
+    private val _detectedDeviceRoom = MutableStateFlow<String?>(null)
+    val detectedDeviceRoom: StateFlow<String?> = _detectedDeviceRoom.asStateFlow()
 
     private var central: BluetoothCentralManager? = null
     private var isScanning = false
+    private var targetRoom: String? = null
 
     fun initializeBle() {
         try {
-            // Create BluetoothCentralManager without callback initially
             central = BluetoothCentralManager(context)
-            Timber.d("BLE Central Manager initialized successfully")
+            Timber.d("📡 BLE Central Manager initialized")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to initialize BLE Central Manager")
+            Timber.e(e, "📡 Failed to initialize BLE Central Manager")
         }
     }
 
+    /**
+     * Start scanning for specific room device
+     */
+    fun startScanningForRoom(roomName: String) {
+        if (!hasRequiredPermissions()) {
+            _bleState.value = BleState.NO_PERMISSION
+            Timber.w("📡 BLE permissions not granted")
+            return
+        }
+
+        if (isScanning) {
+            Timber.d("📡 Already scanning, updating target room to: $roomName")
+            targetRoom = roomName
+            return
+        }
+
+        targetRoom = roomName
+        startScanning()
+    }
+
+    /**
+     * Start general scanning (for backward compatibility)
+     */
     fun startScanning() {
         if (!hasRequiredPermissions()) {
             _bleState.value = BleState.NO_PERMISSION
@@ -44,41 +66,42 @@ class BleRepository(private val context: Context) {
         }
 
         if (isScanning) {
-            Timber.d("Already scanning, ignoring start request")
+            Timber.d("📡 Already scanning, ignoring start request")
             return
         }
 
         central?.let { centralManager ->
             try {
-                // Clear previous detection state before starting new scan
                 clearDetectionState()
                 _bleState.value = BleState.SCANNING
                 isScanning = true
 
-                // Scan for peripherals with the specific name "Humble Coders"
-                val deviceNames = arrayOf("Humble Coders")
+                Timber.d("📡 Starting BLE scan for devices with name: 'Humble Coders'")
+                if (targetRoom != null) {
+                    Timber.d("🎯 Target room: $targetRoom")
+                }
+
                 centralManager.scanForPeripheralsWithNames(
-                    peripheralNames = deviceNames,
+                    peripheralNames = arrayOf("Humble Coders"),
                     resultCallback = { peripheral, scanResult ->
-                        if (isScanning) { // Only process results if we're still scanning
+                        if (isScanning) {
                             handleDeviceDiscovered(peripheral, scanResult)
                         }
                     },
                     scanError = { scanFailure ->
-                        Timber.e("Scan failed with reason: $scanFailure")
+                        Timber.e("📡 Scan failed: $scanFailure")
                         isScanning = false
                         _bleState.value = BleState.IDLE
                     }
                 )
 
-                Timber.d("Started scanning for devices with name: Humble Coders")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to start scanning")
+                Timber.e(e, "📡 Failed to start scanning")
                 isScanning = false
                 _bleState.value = BleState.IDLE
             }
         } ?: run {
-            Timber.e("Central manager not initialized")
+            Timber.e("📡 Central manager not initialized")
             initializeBle()
         }
     }
@@ -89,11 +112,10 @@ class BleRepository(private val context: Context) {
                 centralManager.stopScan()
                 isScanning = false
                 _bleState.value = BleState.IDLE
-                // Clear detection state when stopping scan
                 clearDetectionState()
-                Timber.d("Stopped scanning and cleared detection state")
+                Timber.d("📡 Stopped BLE scanning")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to stop scanning")
+                Timber.e(e, "📡 Failed to stop scanning")
                 isScanning = false
                 _bleState.value = BleState.IDLE
             }
@@ -101,97 +123,109 @@ class BleRepository(private val context: Context) {
     }
 
     private fun handleDeviceDiscovered(peripheral: BluetoothPeripheral, scanResult: ScanResult) {
-        // Double check we're still scanning to prevent stale callbacks
         if (!isScanning) {
-            Timber.d("Ignoring device discovery - not currently scanning")
             return
         }
 
         val deviceName = peripheral.name
-        Timber.d("Discovered device: $deviceName, RSSI: ${scanResult.rssi}")
+        Timber.d("📡 Discovered device: $deviceName, RSSI: ${scanResult.rssi}")
 
-        // Check if this is our ESP32 device with name "Humble Coders"
-        if (deviceName != null && deviceName == "Humble Coders") {
-            Timber.d("Found Humble Coders device!")
+        if (deviceName == "Humble Coders") {
+            val extractedRoom = extractRoomFromDevice(scanResult)
 
-            // Extract manufacturer data to get the subject code
-            val scanRecord = scanResult.scanRecord
-            var extractedSubjectCode: String? = null
+            if (extractedRoom != null) {
+                Timber.d("📡 Extracted room: $extractedRoom")
 
-            scanRecord?.let { record ->
-                try {
-                    // ESP32 uses manufacturer ID 0xFFFF (65535)
-                    val manufacturerData = record.getManufacturerSpecificData(0xFFFF)
-                    manufacturerData?.let { data ->
-                        try {
-                            // The manufacturer data contains the subject code directly
-                            // ESP32 code adds manufacturer ID (2 bytes) + subject code
-                            if (data.size > 2) {
-                                extractedSubjectCode = String(data.copyOfRange(0, data.size), Charsets.UTF_8).trim()
-                                Timber.d("Extracted subject code from 0xFFFF: $extractedSubjectCode")
-                            }
-                        } catch (e: Exception) {
-                            Timber.e(e, "Failed to extract subject code from manufacturer data")
-                        }
+                // Check if this matches our target room (if we have one)
+                if (targetRoom != null) {
+                    if (isRoomMatch(extractedRoom, targetRoom!!)) {
+                        handleRoomMatch(extractedRoom)
+                    } else {
+                        Timber.d("📡 Room mismatch: detected=$extractedRoom, target=$targetRoom")
                     }
+                } else {
+                    // No specific target, accept any valid room
+                    handleRoomMatch(extractedRoom)
+                }
+            } else {
+                Timber.w("📡 Could not extract room from device")
+            }
+        }
+    }
 
-                    // If no manufacturer data found with 0xFFFF, try all available manufacturer data
-                    if (extractedSubjectCode == null) {
-                        val allManufacturerData = record.manufacturerSpecificData
-                        if (allManufacturerData != null) {
-                            Timber.d("Available manufacturer IDs: ${allManufacturerData.size()}")
+    private fun extractRoomFromDevice(scanResult: ScanResult): String? {
+        val scanRecord = scanResult.scanRecord ?: return null
 
-                            // Try all available manufacturer data
-                            for (i in 0 until allManufacturerData.size()) {
-                                val manufacturerId = allManufacturerData.keyAt(i)
-                                val data = allManufacturerData.valueAt(i)
-                                Timber.d("Manufacturer ID: $manufacturerId, Data size: ${data?.size}")
-
-                                data?.let { bytes ->
-                                    if (bytes.isNotEmpty()) {
-                                        try {
-                                            // Try to parse as subject code
-                                            val possibleSubjectCode = String(bytes, Charsets.UTF_8).trim()
-                                            // Check if it looks like a subject code (alphanumeric, reasonable length)
-                                            if (possibleSubjectCode.matches(Regex("[A-Za-z0-9]{3,10}")) &&
-                                                possibleSubjectCode.isNotBlank()) {
-                                                extractedSubjectCode = possibleSubjectCode
-                                                Timber.d("Found subject code in manufacturer ID $manufacturerId: $extractedSubjectCode")
-                                                return@let // Return from the current lambda instead of using break
-                                            }
-                                        } catch (e: Exception) {
-                                            Timber.w("Failed to parse data from manufacturer ID $manufacturerId")
-                                        }
-                                    }
-                                }
-                            }
-                        }
+        try {
+            // Try manufacturer data with ID 0xFFFF first
+            val manufacturerData = scanRecord.getManufacturerSpecificData(0xFFFF)
+            manufacturerData?.let { data ->
+                if (data.isNotEmpty()) {
+                    val roomData = String(data, Charsets.UTF_8).trim()
+                    if (isValidRoomFormat(roomData)) {
+                        return roomData
                     }
-
-                    // Also try to get device name from scan record
-                    if (extractedSubjectCode == null) {
-                        val deviceNameFromRecord = record.deviceName
-                        Timber.d("Device name from record: $deviceNameFromRecord")
-                    }
-                } catch (e: Exception) {
-                    Timber.e(e, "Error processing scan record")
                 }
             }
 
-            // Only update state if we're still scanning
-            if (isScanning) {
-                // Stop scanning when device is found to prevent multiple detections
-                central?.stopScan()
-                isScanning = false
-
-                // Update state
-                _subjectCode.value = extractedSubjectCode ?: "UNKNOWN"
-                _esp32DeviceFound.value = true
-                _bleState.value = BleState.DEVICE_FOUND
-
-                Timber.i("ESP32 attendance device detected! Subject code: ${_subjectCode.value}")
+            // Try all available manufacturer data
+            val allManufacturerData = scanRecord.manufacturerSpecificData
+            if (allManufacturerData != null) {
+                for (i in 0 until allManufacturerData.size()) {
+                    val data = allManufacturerData.valueAt(i)
+                    data?.let { bytes ->
+                        if (bytes.isNotEmpty()) {
+                            val roomData = String(bytes, Charsets.UTF_8).trim()
+                            if (isValidRoomFormat(roomData)) {
+                                return roomData
+                            }
+                        }
+                    }
+                }
             }
+        } catch (e: Exception) {
+            Timber.e(e, "📡 Error extracting room data")
         }
+
+        return null
+    }
+
+    private fun isValidRoomFormat(roomData: String): Boolean {
+        // Valid format: Room name + 3 digits (e.g., "LT101123")
+        // Minimum 5 characters (2 for room + 3 digits)
+        if (roomData.length < 5) return false
+
+        val last3 = roomData.takeLast(3)
+        return last3.all { it.isDigit() }
+    }
+
+    private fun isRoomMatch(detectedRoom: String, targetRoom: String): Boolean {
+        // Extract room name from detected room (remove 3 digits)
+        val roomName = if (detectedRoom.length >= 3) {
+            val suffix = detectedRoom.takeLast(3)
+            if (suffix.all { it.isDigit() }) {
+                detectedRoom.dropLast(3)
+            } else {
+                detectedRoom
+            }
+        } else {
+            detectedRoom
+        }
+
+        return targetRoom.equals(roomName, ignoreCase = true)
+    }
+
+    private fun handleRoomMatch(detectedRoom: String) {
+        // Stop scanning when correct device is found
+        central?.stopScan()
+        isScanning = false
+
+        // Update state
+        _detectedDeviceRoom.value = detectedRoom
+        _deviceFound.value = true
+        _bleState.value = BleState.DEVICE_FOUND
+
+        Timber.i("📡 ✅ Room device detected: $detectedRoom")
     }
 
     fun resetDeviceFound() {
@@ -199,12 +233,25 @@ class BleRepository(private val context: Context) {
         if (_bleState.value == BleState.DEVICE_FOUND) {
             _bleState.value = BleState.IDLE
         }
-        Timber.d("Device found state reset")
+        Timber.d("📡 Device detection state reset")
+    }
+
+    /**
+     * Reset and continue scanning for next device
+     */
+    fun resetAndContinueScanning() {
+        clearDetectionState()
+        if (targetRoom != null) {
+            startScanningForRoom(targetRoom!!)
+        } else {
+            startScanning()
+        }
+        Timber.d("📡 Reset detection and continued scanning")
     }
 
     private fun clearDetectionState() {
-        _esp32DeviceFound.value = false
-        _subjectCode.value = null
+        _deviceFound.value = false
+        _detectedDeviceRoom.value = null
     }
 
     private fun hasRequiredPermissions(): Boolean {
@@ -224,6 +271,16 @@ class BleRepository(private val context: Context) {
             ) == PackageManager.PERMISSION_GRANTED
         }
     }
+
+    /**
+     * Get current target room
+     */
+    fun getCurrentTargetRoom(): String? = targetRoom
+
+    /**
+     * Check if currently scanning for specific room
+     */
+    fun isScanningForRoom(): Boolean = isScanning && targetRoom != null
 }
 
 enum class BleState {

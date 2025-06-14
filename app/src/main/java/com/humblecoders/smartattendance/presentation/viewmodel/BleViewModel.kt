@@ -13,123 +13,166 @@ class BleViewModel(
 ) : ViewModel() {
 
     val bleState: StateFlow<BleState> = bleRepository.bleState
-    val esp32DeviceFound: StateFlow<Boolean> = bleRepository.esp32DeviceFound
-    val subjectCode: StateFlow<String?> = bleRepository.subjectCode
+    val deviceFound: StateFlow<Boolean> = bleRepository.deviceFound
+    val detectedDeviceRoom: StateFlow<String?> = bleRepository.detectedDeviceRoom
 
     init {
         initializeBle()
     }
 
-    private fun initializeBle() {
+    internal fun initializeBle() {
         viewModelScope.launch {
             try {
                 bleRepository.initializeBle()
-                Timber.d("BLE ViewModel initialized")
+                Timber.d("📡 BLE ViewModel initialized")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to initialize BLE in ViewModel")
+                Timber.e(e, "📡 Failed to initialize BLE in ViewModel")
             }
         }
     }
 
+    /**
+     * Start scanning for specific room
+     */
+    fun startScanningForRoom(roomName: String) {
+        viewModelScope.launch {
+            try {
+                Timber.d("📡 Starting scan for room: $roomName")
+                bleRepository.startScanningForRoom(roomName)
+            } catch (e: Exception) {
+                Timber.e(e, "📡 Failed to start scanning for room: $roomName")
+            }
+        }
+    }
+
+    /**
+     * Start general scanning (backward compatibility)
+     */
     fun startScanning() {
         viewModelScope.launch {
             try {
+                Timber.d("📡 Starting general BLE scanning")
                 bleRepository.startScanning()
-                Timber.d("Scanning started from ViewModel")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to start scanning from ViewModel")
+                Timber.e(e, "📡 Failed to start scanning")
             }
         }
     }
 
+    /**
+     * Stop all scanning
+     */
     fun stopScanning() {
         viewModelScope.launch {
             try {
                 bleRepository.stopScanning()
-                Timber.d("Scanning stopped from ViewModel")
+                Timber.d("📡 BLE scanning stopped")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to stop scanning from ViewModel")
+                Timber.e(e, "📡 Failed to stop scanning")
             }
         }
     }
 
+    /**
+     * Reset device detection state
+     */
     fun resetDeviceFound() {
         viewModelScope.launch {
             try {
-                // Reset the device found state but DON'T restart scanning
                 bleRepository.resetDeviceFound()
-                Timber.d("Device found state reset without restarting scan")
+                Timber.d("📡 Device detection reset")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to reset device found state")
+                Timber.e(e, "📡 Failed to reset device detection")
             }
         }
     }
 
     /**
-     * Reset device found and restart scanning (for when user confirms attendance)
+     * Reset and continue scanning for next device
      */
-    fun resetDeviceFoundAndContinueScanning() {
+    fun resetAndContinueScanning() {
         viewModelScope.launch {
             try {
-                // Reset the device found state and restart scanning
-                bleRepository.resetDeviceFound()
-                // Wait a bit before restarting scan to avoid rapid scanning
-                kotlinx.coroutines.delay(1000)
-                bleRepository.startScanning()
-                Timber.d("Device found state reset and scanning restarted")
+                bleRepository.resetAndContinueScanning()
+                Timber.d("📡 Reset and continued scanning")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to reset device found state and restart scanning")
+                Timber.e(e, "📡 Failed to reset and continue scanning")
             }
         }
     }
 
     /**
-     * Get the current subject code if available
+     * Restart scanning (stop and start again)
      */
-    fun getCurrentSubjectCode(): String? {
-        return subjectCode.value
+    fun restartScanning() {
+        viewModelScope.launch {
+            try {
+                bleRepository.stopScanning()
+                kotlinx.coroutines.delay(500) // Small delay
+                bleRepository.startScanning()
+                Timber.d("📡 BLE scanning restarted")
+            } catch (e: Exception) {
+                Timber.e(e, "📡 Failed to restart scanning")
+            }
+        }
     }
 
     /**
-     * Check if Bluetooth is enabled and permissions are granted
+     * Get current detected room (full device name with digits)
+     */
+    fun getDetectedDeviceRoom(): String? {
+        return detectedDeviceRoom.value
+    }
+
+    /**
+     * Get room name from detected device (without digits)
+     */
+    fun getDetectedRoomName(): String? {
+        val deviceRoom = detectedDeviceRoom.value ?: return null
+
+        return if (deviceRoom.length >= 3) {
+            val suffix = deviceRoom.takeLast(3)
+            if (suffix.all { it.isDigit() }) {
+                deviceRoom.dropLast(3)
+            } else {
+                deviceRoom
+            }
+        } else {
+            deviceRoom
+        }
+    }
+
+    /**
+     * Check if detected room matches target room
+     */
+    fun isDetectedRoomMatching(targetRoom: String): Boolean {
+        val detectedRoom = getDetectedRoomName()
+        return detectedRoom?.equals(targetRoom, ignoreCase = true) == true
+    }
+
+    /**
+     * Get current scanning status
+     */
+    fun isCurrentlyScanning(): Boolean {
+        return bleState.value == BleState.SCANNING
+    }
+
+    /**
+     * Check if BLE is ready (permissions and state)
      */
     fun isBluetoothReady(): Boolean {
         return bleState.value != BleState.BLUETOOTH_OFF &&
                 bleState.value != BleState.NO_PERMISSION
     }
 
-    /**
-     * Force restart of scanning (useful when permissions are granted)
-     */
-    fun restartScanning() {
-        viewModelScope.launch {
-            try {
-                bleRepository.stopScanning()
-                kotlinx.coroutines.delay(500) // Small delay to ensure stop is processed
-                bleRepository.startScanning()
-                Timber.d("Scanning restarted from ViewModel")
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to restart scanning from ViewModel")
-            }
-        }
-    }
-
-    /**
-     * Check if device was found and get subject code
-     */
-    fun getDetectedDeviceInfo(): Pair<Boolean, String?> {
-        return Pair(esp32DeviceFound.value, subjectCode.value)
-    }
-
     override fun onCleared() {
         super.onCleared()
-        // Stop scanning when ViewModel is cleared
         viewModelScope.launch {
             try {
                 bleRepository.stopScanning()
-                Timber.d("BLE scanning stopped due to ViewModel clearing")
+                Timber.d("📡 BLE scanning stopped due to ViewModel clearing")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to stop scanning in onCleared")
+                Timber.e(e, "📡 Failed to stop scanning in onCleared")
             }
         }
     }

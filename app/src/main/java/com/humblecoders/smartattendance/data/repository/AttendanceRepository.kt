@@ -8,29 +8,50 @@ class AttendanceRepository {
     private val firebaseRepository = FirebaseRepository()
 
     /**
-     * Mark attendance with Firebase integration
+     * Check if there's an active session for the student's class
+     */
+    suspend fun checkActiveSession(className: String): Result<SessionCheckResult> {
+        return try {
+            Timber.d("🔍 Checking active session for class: $className")
+            val result = firebaseRepository.checkActiveSession(className)
+
+            if (result.isSuccess) {
+                val sessionResult = result.getOrNull()!!
+                Timber.d("✅ Session check completed: ${sessionResult.message}")
+                Result.success(sessionResult)
+            } else {
+                Timber.e("❌ Failed to check active session: ${result.exceptionOrNull()}")
+                Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "💥 Failed to check active session")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Mark attendance with the new structure
      */
     suspend fun markAttendance(
         rollNumber: String,
         studentName: String,
-        subjectCode: String,
-        location: String = ""
+        subject: String,
+        group: String,
+        type: String,
+        deviceRoom: String
     ): Result<AttendanceResponse> {
         return try {
-            Timber.d("🚀 Starting attendance marking process for $rollNumber in $subjectCode")
+            Timber.d("🚀 Starting attendance marking process")
+            Timber.d("📋 Details: rollNumber=$rollNumber, subject=$subject, group=$group, type=$type")
 
-            val request = MarkAttendanceRequest(
+            val result = firebaseRepository.markAttendance(
                 rollNumber = rollNumber,
-                subjectCode = subjectCode,
                 studentName = studentName,
-                verificationMethod = "FACE_RECOGNITION",
-                location = location
+                subject = subject,
+                group = group,
+                type = type,
+                deviceRoom = deviceRoom
             )
-
-            Timber.d("📋 Created attendance request: $request")
-
-            val result = firebaseRepository.markAttendance(request)
-            Timber.d("📡 Firebase repository returned: success=${result.isSuccess}")
 
             if (result.isSuccess) {
                 val response = result.getOrNull()!!
@@ -39,18 +60,15 @@ class AttendanceRepository {
                     Result.success(response)
                 } else {
                     Timber.w("⚠️ Attendance marking failed: ${response.message}")
-                    // FIX: Return failure instead of success with error message
                     Result.failure(Exception("Attendance marking failed: ${response.message}"))
                 }
             } else {
                 val error = result.exceptionOrNull()!!
                 Timber.e(error, "❌ Firebase attendance marking failed")
-                // FIX: Return failure instead of success with error message
                 Result.failure(Exception("Firebase error: ${error.message}"))
             }
         } catch (e: Exception) {
             Timber.e(e, "💥 Unexpected error during attendance marking")
-            // FIX: Return failure instead of success with error message
             Result.failure(Exception("Unexpected error: ${e.message}"))
         }
     }
@@ -80,10 +98,10 @@ class AttendanceRepository {
     /**
      * Get attendance statistics
      */
-    suspend fun getAttendanceStats(rollNumber: String, subjectCode: String? = null): Result<AttendanceStats> {
+    suspend fun getAttendanceStats(rollNumber: String, subject: String? = null): Result<AttendanceStats> {
         return try {
             Timber.d("📊 Fetching attendance stats for $rollNumber")
-            val result = firebaseRepository.getAttendanceStats(rollNumber, subjectCode)
+            val result = firebaseRepository.getAttendanceStats(rollNumber, subject)
 
             if (result.isSuccess) {
                 val stats = result.getOrNull()!!
@@ -95,28 +113,6 @@ class AttendanceRepository {
             }
         } catch (e: Exception) {
             Timber.e(e, "💥 Failed to fetch attendance stats")
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Check if subject is active for attendance
-     */
-    suspend fun isSubjectActive(subjectCode: String): Result<Boolean> {
-        return try {
-            Timber.d("🔍 Checking if subject $subjectCode is active")
-            val result = firebaseRepository.isSubjectActiveForAttendance(subjectCode)
-
-            if (result.isSuccess) {
-                val isActive = result.getOrNull() ?: false
-                Timber.d("✅ Subject $subjectCode active status: $isActive")
-                Result.success(isActive)
-            } else {
-                Timber.e("❌ Failed to check subject status: ${result.exceptionOrNull()}")
-                Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "💥 Failed to check subject status")
             Result.failure(e)
         }
     }
@@ -169,18 +165,21 @@ class AttendanceRepository {
     }
 
     /**
-     * Simplified attendance eligibility validation
-     * FIX: Removed double validation - now only checks for duplicates
+     * Validate attendance eligibility (check for duplicates)
      */
     suspend fun validateAttendanceEligibility(
         rollNumber: String,
-        subjectCode: String
+        subject: String,
+        group: String,
+        type: String
     ): Result<AttendanceEligibility> {
         return try {
-            Timber.d("🔍 Validating attendance eligibility for $rollNumber in $subjectCode")
+            Timber.d("🔍 Validating attendance eligibility for $rollNumber")
 
-            // Only check if already marked today (simplified validation)
-            val alreadyMarkedResult = firebaseRepository.isAttendanceAlreadyMarked(rollNumber, subjectCode)
+            // Check if already marked today
+            val alreadyMarkedResult = firebaseRepository.isAttendanceAlreadyMarked(
+                rollNumber, subject, group, type
+            )
 
             if (alreadyMarkedResult.isFailure) {
                 Timber.e("❌ Failed to verify existing attendance: ${alreadyMarkedResult.exceptionOrNull()}")
@@ -201,7 +200,7 @@ class AttendanceRepository {
                 ))
             }
 
-            // Always eligible if not already marked
+            // Eligible if not already marked
             Timber.d("✅ Student is eligible for attendance")
             Result.success(AttendanceEligibility(
                 isEligible = true,

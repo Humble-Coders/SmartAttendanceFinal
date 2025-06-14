@@ -24,6 +24,7 @@ fun ProfileScreen(
     val profileData by profileViewModel.profileData.collectAsState()
     val nameInput by profileViewModel.nameInput.collectAsState()
     val rollNumberInput by profileViewModel.rollNumberInput.collectAsState()
+    val classNameInput by profileViewModel.classNameInput.collectAsState()
     val isSaving by profileViewModel.isSaving.collectAsState()
     val isFormInitialized by profileViewModel.isFormInitialized.collectAsState()
     val isProfileSaved by profileViewModel.isProfileSaved.collectAsState()
@@ -178,6 +179,18 @@ fun ProfileScreen(
                             isError = rollNumberInput.isBlank() && isProfileSaved
                         )
 
+                        // Class Input
+                        OutlinedTextField(
+                            value = classNameInput,
+                            onValueChange = { profileViewModel.updateClassNameInput(it) },
+                            label = { Text("Class") },
+                            placeholder = { Text("e.g., 2S12, 3E15") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            enabled = !isSaving,
+                            isError = classNameInput.isBlank() && isProfileSaved
+                        )
+
                         // Save Button
                         Button(
                             onClick = {
@@ -268,6 +281,11 @@ fun ProfileScreen(
                                     )
                                     Text(
                                         text = "Name: ${profileData.name}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = "Class: ${profileData.className}",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
