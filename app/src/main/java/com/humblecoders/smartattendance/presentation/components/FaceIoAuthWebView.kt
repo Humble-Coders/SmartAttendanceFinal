@@ -45,7 +45,7 @@ fun FaceIoAuthWebView(
 
                             if (requestedResources.contains(cameraPermission)) {
                                 permissionRequest.grant(arrayOf(cameraPermission))
-                                Timber.d("Camera permission granted to WebView for authentication")
+                                Timber.d("🎥 Camera permission granted to WebView for authentication")
                             } else {
                                 permissionRequest.grant(requestedResources)
                             }
@@ -54,7 +54,7 @@ fun FaceIoAuthWebView(
 
                     override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
                         consoleMessage?.let {
-                            Timber.d("Auth WebView Console: ${it.message()}")
+                            Timber.d("📱 Auth WebView Console: ${it.message()}")
                         }
                         return super.onConsoleMessage(consoleMessage)
                     }
@@ -63,12 +63,14 @@ fun FaceIoAuthWebView(
                 // Add JavaScript interface for communication with thread safety
                 addJavascriptInterface(
                     FaceIoAuthJsInterface(
-                        onAuthenticated = onAuthenticated,
-                        onError = onError
+                        // FIX: Rename parameters to avoid collision
+                        onAuthenticatedCallback = onAuthenticated,
+                        onErrorCallback = onError
                     ),
                     "AndroidInterface"
                 )
 
+                Timber.d("🚀 Loading Face.io authentication WebView")
                 loadDataWithBaseURL(
                     "https://localhost",
                     getFaceIoAuthHtml(),
@@ -84,8 +86,9 @@ fun FaceIoAuthWebView(
 }
 
 class FaceIoAuthJsInterface(
-    private val onAuthenticated: (rollNumber: String) -> Unit,
-    private val onError: (String) -> Unit
+    // FIX: Renamed parameters to avoid method name collision
+    private val onAuthenticatedCallback: (rollNumber: String) -> Unit,
+    private val onErrorCallback: (String) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var hasAuthenticated = false // Prevent multiple callbacks
@@ -93,39 +96,40 @@ class FaceIoAuthJsInterface(
     @JavascriptInterface
     fun onAuthenticated(rollNumber: String) {
         if (hasAuthenticated) {
-            Timber.d("Authentication already processed, ignoring duplicate call")
+            Timber.d("🔄 Authentication already processed, ignoring duplicate call")
             return
         }
 
         hasAuthenticated = true
-        Timber.d("User authenticated with roll number: $rollNumber")
+        Timber.d("✅ User authenticated with roll number: $rollNumber")
 
         // Use Handler to ensure execution on main thread
         mainHandler.post {
             try {
-                onAuthenticated(rollNumber)
+                Timber.d("🔥 CALLING ATTENDANCE CALLBACK FOR: $rollNumber")
+                onAuthenticatedCallback(rollNumber) // FIX: Now calls the callback, not itself
             } catch (e: Exception) {
-                Timber.e(e, "Error in onAuthenticated callback")
+                Timber.e(e, "❌ Error in onAuthenticated callback")
             }
         }
     }
 
     @JavascriptInterface
     fun onError(error: String) {
-        Timber.e("Authentication error: $error")
+        Timber.e("❌ Authentication error: $error")
         // Use Handler to ensure execution on main thread
         mainHandler.post {
             try {
-                onError(error)
+                onErrorCallback(error)
             } catch (e: Exception) {
-                Timber.e(e, "Error in onError callback")
+                Timber.e(e, "❌ Error in onError callback")
             }
         }
     }
 
     @JavascriptInterface
     fun log(message: String) {
-        Timber.d("Auth WebView JS: $message")
+        Timber.d("📱 Auth WebView JS: $message")
     }
 }
 
@@ -219,7 +223,7 @@ private fun getFaceIoAuthHtml(): String {
                 const startButton = document.getElementById('startButton');
                 
                 function log(message) {
-                    console.log(message);
+                    console.log("🔥 FACE.IO: " + message);
                     if (window.AndroidInterface && window.AndroidInterface.log) {
                         try {
                             window.AndroidInterface.log(message);
@@ -229,39 +233,46 @@ private fun getFaceIoAuthHtml(): String {
                     }
                 }
                 
-                // Safe callback function with delayed execution and duplicate prevention
+                // Enhanced callback function with better error handling
                 function safeCallback(callbackName, data, delay = 100) {
                     if (hasAuthenticated && callbackName === 'onAuthenticated') {
-                        log('Authentication already processed, preventing duplicate callback');
+                        log('🔄 Authentication already processed, preventing duplicate callback');
                         return;
                     }
+                    
+                    log('🚀 Preparing to call ' + callbackName + ' with data: ' + data);
                     
                     setTimeout(() => {
                         try {
                             if (window.AndroidInterface && window.AndroidInterface[callbackName]) {
-                                log('Calling ' + callbackName + ' with data: ' + data);
+                                log('📞 Calling AndroidInterface.' + callbackName + ' with data: ' + data);
                                 window.AndroidInterface[callbackName](data);
                                 
                                 if (callbackName === 'onAuthenticated') {
                                     hasAuthenticated = true;
+                                    log('✅ Authentication callback completed successfully');
                                 }
                             } else {
-                                log('AndroidInterface.' + callbackName + ' not available');
+                                const errorMsg = 'AndroidInterface.' + callbackName + ' not available';
+                                log('❌ ' + errorMsg);
+                                console.error(errorMsg);
                             }
                         } catch (error) {
-                            log('Error calling ' + callbackName + ': ' + error.message);
+                            const errorMsg = 'Error calling ' + callbackName + ': ' + error.message;
+                            log('❌ ' + errorMsg);
                             console.error('Callback error:', error);
                         }
                     }, delay);
                 }
                 
                 window.addEventListener('load', function() {
-                    log('Page loaded, initializing Face.io for authentication...');
+                    log('📱 Page loaded, initializing Face.io for authentication...');
                     
                     setTimeout(function() {
                         try {
+                            log('🔧 Creating faceIO instance...');
                             faceio = new faceIO('fioa264a');
-                            log('Face.io initialized successfully');
+                            log('✅ Face.io initialized successfully');
                             
                             statusDiv.innerHTML = 'Face.io ready. Click button to scan face.';
                             statusDiv.className = 'status loading';
@@ -270,8 +281,9 @@ private fun getFaceIoAuthHtml(): String {
                             startButton.addEventListener('click', startAuthentication);
                             
                         } catch (error) {
-                            log('Failed to initialize Face.io: ' + error.message);
-                            statusDiv.innerHTML = 'Failed to initialize Face.io: ' + error.message;
+                            const errorMsg = 'Failed to initialize Face.io: ' + error.message;
+                            log('❌ ' + errorMsg);
+                            statusDiv.innerHTML = errorMsg;
                             statusDiv.className = 'status error';
                             
                             safeCallback('onError', 'Initialization failed: ' + error.message);
@@ -281,11 +293,11 @@ private fun getFaceIoAuthHtml(): String {
                 
                 function startAuthentication() {
                     if (isAuthenticating || hasAuthenticated) {
-                        log('Authentication already in progress or completed');
+                        log('⏸️ Authentication already in progress or completed');
                         return;
                     }
                     
-                    log('Starting authentication...');
+                    log('🎯 Starting authentication process...');
                     isAuthenticating = true;
                     startButton.style.display = 'none';
                     statusDiv.innerHTML = 'Scanning face...';
@@ -299,29 +311,30 @@ private fun getFaceIoAuthHtml(): String {
                 function authenticateUser() {
                     if (!faceio || hasAuthenticated) {
                         if (hasAuthenticated) {
-                            log('Authentication already completed');
+                            log('✅ Authentication already completed');
                             return;
                         }
-                        log('Face.io not initialized');
+                        log('❌ Face.io not initialized');
                         statusDiv.innerHTML = 'Face.io not initialized';
                         statusDiv.className = 'status error';
                         return;
                     }
                     
-                    log('Calling faceio.authenticate()...');
+                    log('🔍 Calling faceio.authenticate()...');
                     
                     faceio.authenticate({
                         locale: "auto"
                     }).then(userData => {
                         if (hasAuthenticated) {
-                            log('Authentication already processed, ignoring result');
+                            log('🔄 Authentication already processed, ignoring result');
                             return;
                         }
                         
-                        log('Authentication successful!');
-                        log('Payload: ' + JSON.stringify(userData.payload));
+                        log('🎉 Authentication successful!');
+                        log('📋 Payload: ' + JSON.stringify(userData.payload));
                         
                         const rollNumber = userData.payload ? userData.payload.rollNumber : 'Unknown';
+                        log('🆔 Extracted Roll Number: ' + rollNumber);
                         
                         statusDiv.innerHTML = 'Face recognized! Roll Number: ' + rollNumber + '<br>Processing attendance...';
                         statusDiv.className = 'status success';
@@ -332,15 +345,16 @@ private fun getFaceIoAuthHtml(): String {
                         startButton.textContent = 'Authentication Complete';
                         
                         // Use safe callback with delay
+                        log('📞 Calling success callback...');
                         safeCallback('onAuthenticated', rollNumber, 200);
                         
                     }).catch(errCode => {
                         if (hasAuthenticated) {
-                            log('Authentication already completed, ignoring error');
+                            log('✅ Authentication already completed, ignoring error');
                             return;
                         }
                         
-                        log('Authentication failed with error code: ' + errCode);
+                        log('❌ Authentication failed with error code: ' + errCode);
                         let errorMessage = handleError(errCode);
                         statusDiv.innerHTML = 'Error: ' + errorMessage;
                         statusDiv.className = 'status error';
@@ -350,6 +364,7 @@ private fun getFaceIoAuthHtml(): String {
                         startButton.style.display = 'block';
                         
                         // Use safe callback with delay
+                        log('📞 Calling error callback...');
                         safeCallback('onError', errorMessage, 200);
                     });
                 }
@@ -372,7 +387,7 @@ private fun getFaceIoAuthHtml(): String {
                         15: "Too many requests. Please wait a moment"
                     };
                     
-                    log('Face.io error code: ' + errCode);
+                    log('📋 Face.io error code: ' + errCode);
                     return errorMessages[errCode] || "Unknown error occurred (Code: " + errCode + ")";
                 }
             </script>

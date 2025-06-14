@@ -1,4 +1,4 @@
-// Create this file: app/src/main/java/com/humblecoders/smartattendance/data/repository/FirebaseRepository.kt
+// Replace your existing FirebaseRepository.kt with this:
 
 package com.humblecoders.smartattendance.data.repository
 
@@ -21,19 +21,26 @@ class FirebaseRepository {
     private val subjectsCollection = firestore.collection("subjects")
     private val attendanceCollection = firestore.collection("attendance_records")
 
+    init {
+        Timber.d("🔧 FirebaseRepository initialized")
+        Timber.d("📊 Firestore instance: ${firestore.app.name}")
+    }
+
     /**
      * Register/Update student profile in Firebase
      */
     suspend fun saveStudentProfile(student: Student): Result<String> {
         return try {
+            Timber.d("👤 Saving student profile: ${student.rollNumber}")
+
             studentsCollection.document(student.rollNumber)
                 .set(student.copy(updatedAt = Timestamp.now()))
                 .await()
 
-            Timber.d("Student profile saved successfully: ${student.rollNumber}")
+            Timber.d("✅ Student profile saved successfully: ${student.rollNumber}")
             Result.success("Profile saved successfully")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to save student profile")
+            Timber.e(e, "❌ Failed to save student profile: ${student.rollNumber}")
             Result.failure(e)
         }
     }
@@ -43,13 +50,15 @@ class FirebaseRepository {
      */
     suspend fun getStudentProfile(rollNumber: String): Result<Student?> {
         return try {
+            Timber.d("🔍 Retrieving student profile: $rollNumber")
+
             val document = studentsCollection.document(rollNumber).get().await()
             val student = document.toObject(Student::class.java)
 
-            Timber.d("Retrieved student profile: $rollNumber")
+            Timber.d("✅ Retrieved student profile: $rollNumber, exists: ${student != null}")
             Result.success(student)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to get student profile")
+            Timber.e(e, "❌ Failed to get student profile: $rollNumber")
             Result.failure(e)
         }
     }
@@ -59,15 +68,17 @@ class FirebaseRepository {
      */
     suspend fun isSubjectActiveForAttendance(subjectCode: String): Result<Boolean> {
         return try {
+            Timber.d("🔍 Checking subject active status: $subjectCode")
+
             val document = subjectsCollection.document(subjectCode).get().await()
             val subject = document.toObject(Subject::class.java)
 
             val isActive = subject?.isActive ?: false
-            Timber.d("Subject $subjectCode active status: $isActive")
+            Timber.d("✅ Subject $subjectCode active status: $isActive")
 
             Result.success(isActive)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to check subject status")
+            Timber.e(e, "❌ Failed to check subject status: $subjectCode")
             Result.failure(e)
         }
     }
@@ -78,6 +89,7 @@ class FirebaseRepository {
     suspend fun isAttendanceAlreadyMarked(rollNumber: String, subjectCode: String): Result<Boolean> {
         return try {
             val today = LocalDateTime.now().toLocalDate().toString()
+            Timber.d("🔍 Checking if attendance already marked for $rollNumber in $subjectCode on $today")
 
             val query = attendanceCollection
                 .whereEqualTo("rollNumber", rollNumber)
@@ -88,22 +100,29 @@ class FirebaseRepository {
             val documents = query.get().await()
             val alreadyMarked = !documents.isEmpty
 
-            Timber.d("Attendance already marked for $rollNumber in $subjectCode today: $alreadyMarked")
+            Timber.d("✅ Attendance already marked check: $alreadyMarked (found ${documents.size()} records)")
             Result.success(alreadyMarked)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to check existing attendance")
+            Timber.e(e, "❌ Failed to check existing attendance for $rollNumber in $subjectCode")
             Result.failure(e)
         }
     }
 
     /**
      * Mark attendance for student
+     * FIX: Enhanced logging and better error handling
      */
     suspend fun markAttendance(request: MarkAttendanceRequest): Result<AttendanceResponse> {
         return try {
-            // Only check if already marked today (removed subject active validation)
+            Timber.d("🚀 Starting Firebase attendance marking process")
+            Timber.d("📋 Request details: $request")
+
+            // Check if already marked today
+            Timber.d("🔍 Checking for duplicate attendance...")
             val alreadyMarkedResult = isAttendanceAlreadyMarked(request.rollNumber, request.subjectCode)
+
             if (alreadyMarkedResult.isFailure) {
+                Timber.e("❌ Failed to verify existing attendance: ${alreadyMarkedResult.exceptionOrNull()}")
                 return Result.success(AttendanceResponse(
                     success = false,
                     message = "Failed to verify existing attendance"
@@ -111,6 +130,7 @@ class FirebaseRepository {
             }
 
             if (alreadyMarkedResult.getOrNull() == true) {
+                Timber.w("⚠️ Attendance already marked for today")
                 return Result.success(AttendanceResponse(
                     success = false,
                     message = "Attendance already marked for today",
@@ -136,12 +156,17 @@ class FirebaseRepository {
                 deviceId = android.os.Build.MODEL // Device info
             )
 
+            Timber.d("📝 Created attendance record: $attendanceRecord")
+
             // Save to Firestore
+            Timber.d("💾 Saving to Firestore collection: attendance_records")
+            Timber.d("📄 Document ID: $attendanceId")
+
             attendanceCollection.document(attendanceId)
                 .set(attendanceRecord)
                 .await()
 
-            Timber.i("Attendance marked successfully: $attendanceId for ${request.rollNumber}")
+            Timber.i("🎉 Attendance marked successfully: $attendanceId for ${request.rollNumber}")
 
             Result.success(AttendanceResponse(
                 success = true,
@@ -150,10 +175,14 @@ class FirebaseRepository {
             ))
 
         } catch (e: Exception) {
-            Timber.e(e, "Failed to mark attendance")
+            Timber.e(e, "💥 Failed to mark attendance in Firebase")
+            Timber.e("❌ Exception type: ${e.javaClass.simpleName}")
+            Timber.e("❌ Exception message: ${e.message}")
+
+            // FIX: Return success with failure details (as expected by repository)
             Result.success(AttendanceResponse(
                 success = false,
-                message = "Failed to mark attendance: ${e.message}"
+                message = "Firebase error: ${e.message}"
             ))
         }
     }
@@ -166,6 +195,8 @@ class FirebaseRepository {
         limit: Int = 50
     ): Result<List<AttendanceRecord>> {
         return try {
+            Timber.d("📚 Fetching attendance history for $rollNumber (limit: $limit)")
+
             val query = attendanceCollection
                 .whereEqualTo("rollNumber", rollNumber)
                 .orderBy("timestamp", Query.Direction.DESCENDING)
@@ -174,10 +205,10 @@ class FirebaseRepository {
             val documents = query.get().await()
             val attendanceList = documents.toObjects(AttendanceRecord::class.java)
 
-            Timber.d("Retrieved ${attendanceList.size} attendance records for $rollNumber")
+            Timber.d("✅ Retrieved ${attendanceList.size} attendance records for $rollNumber")
             Result.success(attendanceList)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to get attendance history")
+            Timber.e(e, "❌ Failed to get attendance history for $rollNumber")
             Result.failure(e)
         }
     }
@@ -187,6 +218,8 @@ class FirebaseRepository {
      */
     suspend fun getAttendanceStats(rollNumber: String, subjectCode: String? = null): Result<AttendanceStats> {
         return try {
+            Timber.d("📊 Calculating attendance stats for $rollNumber" + if (subjectCode != null) " in $subjectCode" else "")
+
             var query = attendanceCollection.whereEqualTo("rollNumber", rollNumber)
 
             if (subjectCode != null) {
@@ -209,10 +242,10 @@ class FirebaseRepository {
                 attendancePercentage = percentage
             )
 
-            Timber.d("Attendance stats for $rollNumber: $stats")
+            Timber.d("✅ Calculated attendance stats for $rollNumber: $stats")
             Result.success(stats)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to get attendance stats")
+            Timber.e(e, "❌ Failed to get attendance stats for $rollNumber")
             Result.failure(e)
         }
     }
@@ -222,6 +255,8 @@ class FirebaseRepository {
      */
     suspend fun updateStudentFaceId(rollNumber: String, faceId: String): Result<String> {
         return try {
+            Timber.d("🆔 Updating face ID for student: $rollNumber")
+
             studentsCollection.document(rollNumber)
                 .update(
                     mapOf(
@@ -231,10 +266,10 @@ class FirebaseRepository {
                 )
                 .await()
 
-            Timber.d("Face ID updated for student: $rollNumber")
+            Timber.d("✅ Face ID updated for student: $rollNumber")
             Result.success("Face ID updated successfully")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to update face ID")
+            Timber.e(e, "❌ Failed to update face ID for $rollNumber")
             Result.failure(e)
         }
     }
@@ -244,13 +279,15 @@ class FirebaseRepository {
      */
     suspend fun getSubjectDetails(subjectCode: String): Result<Subject?> {
         return try {
+            Timber.d("🔍 Retrieving subject details: $subjectCode")
+
             val document = subjectsCollection.document(subjectCode).get().await()
             val subject = document.toObject(Subject::class.java)
 
-            Timber.d("Retrieved subject details: $subjectCode")
+            Timber.d("✅ Retrieved subject details: $subjectCode, exists: ${subject != null}")
             Result.success(subject)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to get subject details")
+            Timber.e(e, "❌ Failed to get subject details: $subjectCode")
             Result.failure(e)
         }
     }

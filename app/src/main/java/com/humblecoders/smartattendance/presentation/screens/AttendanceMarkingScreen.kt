@@ -13,6 +13,7 @@ import com.humblecoders.smartattendance.presentation.components.CameraPermission
 import com.humblecoders.smartattendance.presentation.components.FaceIoAuthWebView
 import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewModel
 import kotlinx.coroutines.delay
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,13 +27,26 @@ fun AttendanceMarkingScreen(
     var hasCameraPermission by remember { mutableStateOf(false) }
     var permissionDenied by remember { mutableStateOf(false) }
 
+    // FIX: Add comprehensive logging for the screen lifecycle
+    LaunchedEffect(Unit) {
+        Timber.d("🎬 AttendanceMarkingScreen: Screen launched")
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            Timber.d("🎬 AttendanceMarkingScreen: Screen disposed")
+        }
+    }
+
     // Handle camera permission
     CameraPermissionHandler(
         onPermissionGranted = {
+            Timber.d("📷 Camera permission granted")
             hasCameraPermission = true
             permissionDenied = false
         },
         onPermissionDenied = {
+            Timber.w("📷 Camera permission denied")
             permissionDenied = true
         }
     )
@@ -42,7 +56,10 @@ fun AttendanceMarkingScreen(
             TopAppBar(
                 title = { Text("Mark Attendance") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        Timber.d("🔙 User clicked back button")
+                        onNavigateBack()
+                    }) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close"
@@ -59,12 +76,17 @@ fun AttendanceMarkingScreen(
         ) {
             when {
                 permissionDenied -> {
+                    Timber.d("🎬 Showing permission denied content")
                     // Show permission denied message
                     PermissionDeniedContent(
-                        onCancel = onNavigateBack
+                        onCancel = {
+                            Timber.d("🔙 User cancelled due to permission denial")
+                            onNavigateBack()
+                        }
                     )
                 }
                 !hasCameraPermission -> {
+                    Timber.d("🎬 Waiting for camera permission")
                     // Show loading while waiting for permission
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -80,40 +102,67 @@ fun AttendanceMarkingScreen(
                     }
                 }
                 showSuccess -> {
+                    Timber.d("🎬 Showing success content")
                     // Show success message
                     AttendanceSuccessContent(
                         message = successMessage,
-                        onDone = onNavigateBack
+                        onDone = {
+                            Timber.d("🔙 User completed attendance marking successfully")
+                            onNavigateBack()
+                        }
                     )
                 }
                 errorMessage != null -> {
+                    Timber.d("🎬 Showing error content: $errorMessage")
                     // Show error message
                     AttendanceErrorContent(
                         errorMessage = errorMessage!!,
                         onRetry = {
+                            Timber.d("🔄 User retrying after error")
                             errorMessage = null
                         },
-                        onCancel = onNavigateBack
+                        onCancel = {
+                            Timber.d("🔙 User cancelled after error")
+                            onNavigateBack()
+                        }
                     )
                 }
                 else -> {
+                    Timber.d("🎬 Showing Face.io authentication WebView")
                     // Show Face.io authentication WebView
                     FaceIoAuthWebView(
                         modifier = Modifier.fillMaxSize(),
                         onAuthenticated = { rollNumber ->
-                            // Mark attendance for this roll number
-                            attendanceViewModel.markAttendance(
-                                rollNumber = rollNumber,
-                                onSuccess = {
-                                    successMessage = "Attendance marked for Roll No: $rollNumber"
-                                    showSuccess = true
-                                },
-                                onError = { error ->
-                                    errorMessage = error
-                                }
-                            )
+                            // FIX: Add comprehensive logging for the callback
+                            Timber.d("🔥 WEBVIEW CALLBACK TRIGGERED!")
+                            Timber.d("🆔 Authenticated roll number: $rollNumber")
+
+                            try {
+                                // Mark attendance for this roll number
+                                Timber.d("📞 Calling attendanceViewModel.markAttendance...")
+                                attendanceViewModel.markAttendance(
+                                    rollNumber = rollNumber,
+                                    subjectCode = "Unknown", // TODO: Get from BLE if needed
+                                    onSuccess = {
+                                        Timber.i("🎉 Attendance marking SUCCESS callback triggered")
+                                        successMessage = "Attendance marked for Roll No: $rollNumber"
+                                        showSuccess = true
+                                        errorMessage = null
+                                    },
+                                    onError = { error ->
+                                        Timber.e("❌ Attendance marking ERROR callback triggered: $error")
+                                        errorMessage = error
+                                        showSuccess = false
+                                    }
+                                )
+                                Timber.d("✅ attendanceViewModel.markAttendance call completed")
+                            } catch (e: Exception) {
+                                Timber.e(e, "💥 Exception while calling markAttendance")
+                                errorMessage = "Failed to process attendance: ${e.message}"
+                            }
                         },
                         onError = { error ->
+                            Timber.e("❌ WebView authentication error: $error")
                             errorMessage = error
                         }
                     )
@@ -182,7 +231,9 @@ private fun AttendanceSuccessContent(
     onDone: () -> Unit
 ) {
     LaunchedEffect(Unit) {
+        Timber.d("⏰ Auto-navigation timer started (3 seconds)")
         delay(3000) // Auto navigate after 3 seconds
+        Timber.d("⏰ Auto-navigation triggered")
         onDone()
     }
 
@@ -226,7 +277,10 @@ private fun AttendanceSuccessContent(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
-                    onClick = onDone,
+                    onClick = {
+                        Timber.d("✅ User manually clicked Done button")
+                        onDone()
+                    },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Done")
@@ -286,7 +340,10 @@ private fun AttendanceErrorContent(
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     OutlinedButton(
-                        onClick = onCancel,
+                        onClick = {
+                            Timber.d("🔙 User cancelled after error")
+                            onCancel()
+                        },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Cancel")
@@ -295,7 +352,10 @@ private fun AttendanceErrorContent(
                     Spacer(modifier = Modifier.width(16.dp))
 
                     Button(
-                        onClick = onRetry,
+                        onClick = {
+                            Timber.d("🔄 User retrying after error")
+                            onRetry()
+                        },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Try Again")
