@@ -37,6 +37,11 @@ class FirebaseRepository {
     /**
      * Check if there's an active session for the student's class
      */
+    // Replace the checkActiveSession method in your FirebaseRepository.kt with this:
+
+    /**
+     * Check if there's an active session for the student's class (FIXED VERSION)
+     */
     suspend fun checkActiveSession(className: String): Result<SessionCheckResult> {
         return try {
             Timber.d("🔍 Checking active session for class: $className")
@@ -44,21 +49,126 @@ class FirebaseRepository {
             val document = activeSessionsCollection.document(className).get().await()
 
             if (document.exists()) {
-                val session = document.toObject(ActiveSession::class.java)
-                Timber.d("📄 Session document found for $session")
+                val rawData = document.data
+                Timber.d("📄 Session document found for class: $className")
 
-                if (session != null && session.isActive) {
-                    Timber.d("✅ Active session found for $className: ${session.subject} in ${session.room}")
-                    Result.success(SessionCheckResult(
-                        isActive = true,
-                        session = session,
-                        message = "Active session found"
-                    ))
+                if (rawData != null) {
+                    // Manual session creation to avoid deserialization issues
+                    val session = ActiveSession(
+                        isActive = (rawData["isActive"] as? Boolean) ?: false,
+                        subject = (rawData["subject"] as? String) ?: "",
+                        room = (rawData["room"] as? String) ?: "",
+                        type = (rawData["type"] as? String) ?: "",
+                        sessionId = (rawData["sessionId"] as? String) ?: "",
+                        date = (rawData["date"] as? String) ?: ""
+                    )
+
+                    Timber.d("📚 Session created: isActive=${session.isActive}, subject=${session.subject}, room=${session.room}")
+
+                    if (session.isActive) {
+                        Timber.d("✅ Active session found for $className: ${session.subject} in ${session.room}")
+                        Result.success(SessionCheckResult(
+                            isActive = true,
+                            session = session,
+                            message = "Active session found"
+                        ))
+                    } else {
+                        Timber.d("⚪ Session exists but not active for $className")
+                        Result.success(SessionCheckResult(
+                            isActive = false,
+                            session = session,
+                            message = "Session not active"
+                        ))
+                    }
                 } else {
-                    Timber.d("⚪ Session exists but not active for $className")
+                    Timber.w("⚠️ Session document exists but data is null for $className")
                     Result.success(SessionCheckResult(
                         isActive = false,
-                        message = "No active session"
+                        message = "Session data is null"
+                    ))
+                }
+            } else {
+                Timber.d("⚪ No session document found for $className")
+                Result.success(SessionCheckResult(
+                    isActive = false,
+                    message = "No session found"
+                ))
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to check active session for $className")
+            Result.failure(e)
+        }
+    }
+
+    // Add this enhanced session checking method to your FirebaseRepository.kt
+
+    /**
+     * Check if there's an active session for the student's class (with enhanced debugging)
+     */
+    suspend fun checkActiveSessionDebug(className: String): Result<SessionCheckResult> {
+        return try {
+            Timber.d("🔍 Checking active session for class: $className")
+
+            val document = activeSessionsCollection.document(className).get().await()
+
+            Timber.d("📄 Document exists: ${document.exists()}")
+
+            if (document.exists()) {
+                // Log raw document data first
+                val rawData = document.data
+                Timber.d("📊 Raw document data: $rawData")
+
+                // Check specific isActive field
+                val isActiveRaw = document.get("isActive")
+                Timber.d("🔥 Raw isActive value: $isActiveRaw (type: ${isActiveRaw?.javaClass?.simpleName})")
+
+                // Try manual field extraction
+                val manualIsActive = document.getBoolean("isActive")
+                Timber.d("👆 Manual isActive extraction: $manualIsActive")
+
+                // Now try automatic deserialization
+                val session = document.toObject(ActiveSession::class.java)
+                Timber.d("🤖 Automatic deserialization result: $session")
+
+                if (session != null) {
+                    Timber.d("✅ Session object created - isActive: ${session.isActive}")
+                    Timber.d("📚 Session details: subject='${session.subject}', room='${session.room}', type='${session.type}'")
+
+                    if (session.isActive) {
+                        Timber.d("🎯 Session is ACTIVE for $className")
+                        Result.success(SessionCheckResult(
+                            isActive = true,
+                            session = session,
+                            message = "Active session found"
+                        ))
+                    } else {
+                        Timber.w("⚠️ Session exists but isActive is FALSE for $className")
+
+                        // Try creating session manually with raw data
+                        val manualSession = rawData?.let { data ->
+                            ActiveSession(
+                                isActive = (data["isActive"] as? Boolean) ?: false,
+                                subject = (data["subject"] as? String) ?: "",
+                                room = (data["room"] as? String) ?: "",
+                                type = (data["type"] as? String) ?: "",
+                                sessionId = (data["sessionId"] as? String) ?: "",
+                                date = (data["date"] as? String) ?: ""
+                            )
+                        }
+
+                        Timber.d("🔧 Manual session creation: $manualSession")
+
+                        Result.success(SessionCheckResult(
+                            isActive = manualSession?.isActive ?: false,
+                            session = manualSession,
+                            message = if (manualSession?.isActive == true) "Active session found (manual)" else "Session not active"
+                        ))
+                    }
+                } else {
+                    Timber.e("❌ Failed to deserialize session document for $className")
+                    Result.success(SessionCheckResult(
+                        isActive = false,
+                        message = "Failed to parse session data"
                     ))
                 }
             } else {

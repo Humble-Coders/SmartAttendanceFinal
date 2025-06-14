@@ -6,17 +6,40 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-// New model for active sessions
+// FIXED: ActiveSession without default values for better Firestore deserialization
 data class ActiveSession(
+    @PropertyName("isActive") val isActive: Boolean,
+    @PropertyName("subject") val subject: String,
+    @PropertyName("room") val room: String,
+    @PropertyName("type") val type: String, // "lect", "lab", "tut"
+    @PropertyName("sessionId") val sessionId: String,
+    @PropertyName("date") val date: String // YYYY-MM-DD format
+) {
+    // No-argument constructor required by Firestore
+    constructor() : this(
+        isActive = false,
+        subject = "",
+        room = "",
+        type = "",
+        sessionId = "",
+        date = ""
+    )
+}
+
+// Alternative approach: Keep default values but add explicit constructor
+data class ActiveSessionAlternative(
     @PropertyName("isActive") val isActive: Boolean = false,
     @PropertyName("subject") val subject: String = "",
     @PropertyName("room") val room: String = "",
     @PropertyName("type") val type: String = "", // "lect", "lab", "tut"
     @PropertyName("sessionId") val sessionId: String = "",
     @PropertyName("date") val date: String = "" // YYYY-MM-DD format
-)
+) {
+    // Explicit no-argument constructor
+    constructor() : this(false, "", "", "", "", "")
+}
 
-// New model for monthly attendance records
+// Keep the rest of your models unchanged
 data class AttendanceRecord(
     @PropertyName("date") val date: String = "",
     @PropertyName("rollNumber") val rollNumber: String = "",

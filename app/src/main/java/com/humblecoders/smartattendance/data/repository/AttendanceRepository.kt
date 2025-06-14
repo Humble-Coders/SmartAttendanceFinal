@@ -13,6 +13,7 @@ class AttendanceRepository {
     suspend fun checkActiveSession(className: String): Result<SessionCheckResult> {
         return try {
             Timber.d("🔍 Checking active session for class: $className")
+
             val result = firebaseRepository.checkActiveSession(className)
 
             if (result.isSuccess) {
