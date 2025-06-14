@@ -43,6 +43,7 @@ fun StudentHomeScreen(
     val bleState by bleViewModel.bleState.collectAsState()
     val deviceFound by bleViewModel.deviceFound.collectAsState()
     val detectedDeviceRoom by bleViewModel.detectedDeviceRoom.collectAsState()
+    val detectedSubjectCode by bleViewModel.detectedSubjectCode.collectAsState()
     val profileData by profileViewModel.profileData.collectAsState()
     val attendanceHistory by attendanceViewModel.attendanceHistory.collectAsState()
 
@@ -104,30 +105,47 @@ fun StudentHomeScreen(
         }
     }
 
-    // Handle device detection and room matching
-    LaunchedEffect(deviceFound, detectedDeviceRoom) {
+    // Handle device detection and validation
+    LaunchedEffect(deviceFound, detectedDeviceRoom, detectedSubjectCode) {
         if (deviceFound && isSessionActive && detectedDeviceRoom != null) {
-            Timber.d("Device detected: $detectedDeviceRoom")
+            val detectedRoomName = bleViewModel.getDetectedRoomName()
+            val detectedSubject = detectedSubjectCode
+
+            Timber.d("📡 Device detected: room=$detectedRoomName, subject=$detectedSubject")
+            Timber.d("📚 Current session: room=$currentRoom, subject=$currentSubject")
 
             // Check if detected room matches session room
             if (bleViewModel.isDetectedRoomMatching(currentRoom)) {
-                Timber.d("Room matches! Detected device: $detectedDeviceRoom, Session room: $currentRoom")
-                // Show classroom detected overlay
-                triggerClassroomDetectedSequence(
-                    onStateChange = { overlayState = it },
-                    roomName = currentRoom
-                )
+                // Additional validation: check if subject codes match (optional)
+                if (detectedSubject != null && detectedSubject.equals(currentSubject, ignoreCase = true)) {
+                    Timber.d("✅ Perfect match! Room: $detectedRoomName, Subject: $detectedSubject")
+                    // Show classroom detected overlay
+                    triggerClassroomDetectedSequence(
+                        onStateChange = { overlayState = it },
+                        roomName = currentRoom
+                    )
+                } else if (detectedSubject != null) {
+                    Timber.w("⚠️ Room matches but subject differs. Detected: $detectedSubject, Session: $currentSubject")
+                    // You can decide whether to proceed or not
+                    // For now, let's proceed with room match only
+                    triggerClassroomDetectedSequence(
+                        onStateChange = { overlayState = it },
+                        roomName = currentRoom
+                    )
+                } else {
+                    Timber.w("⚠️ Room matches but no subject code detected")
+                    // Proceed with room match only
+                    triggerClassroomDetectedSequence(
+                        onStateChange = { overlayState = it },
+                        roomName = currentRoom
+                    )
+                }
             } else {
-                val detectedRoomName = bleViewModel.getDetectedRoomName()
-                Timber.w("Room mismatch. Detected: $detectedRoomName, Session: $currentRoom")
+                Timber.w("❌ Room mismatch. Detected: $detectedRoomName, Session: $currentRoom")
                 bleViewModel.resetDeviceFound()
             }
         }
     }
-
-
-
-
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -425,7 +443,7 @@ fun StudentHomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Current Activity Card
+            // Current Activity Card (Enhanced with subject code info)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -473,7 +491,7 @@ fun StudentHomeScreen(
                         Text(
                             text = when (bleState) {
                                 BleState.SCANNING -> "Bluetooth Detection: Active"
-                                BleState.DEVICE_FOUND -> "Device Found: ${detectedDeviceRoom ?: "Unknown"}"
+                                BleState.DEVICE_FOUND -> "Device Found: ${bleViewModel.getDetectedRoomName() ?: "Unknown"}"
                                 BleState.IDLE -> "Bluetooth Detection: Idle"
                                 else -> "Bluetooth Detection: ${bleState.name}"
                             },
@@ -504,7 +522,7 @@ fun StudentHomeScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = when {
-                                deviceFound -> "Room Detection: Found ($currentRoom)"
+                                deviceFound -> "Room Detection: Found (${bleViewModel.getDetectedRoomName()})"
                                 bleState == BleState.SCANNING -> "Room Detection: Searching..."
                                 isSessionActive -> "Room Detection: Waiting for proximity"
                                 else -> "Room Detection: Inactive"
@@ -512,6 +530,30 @@ fun StudentHomeScreen(
                             fontSize = 14.sp,
                             color = Color(0xFF8E8E93)
                         )
+                    }
+
+                    // Subject Code Detection Status (NEW)
+                    if (detectedSubjectCode != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📚",
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Subject Detected: $detectedSubjectCode",
+                                fontSize = 14.sp,
+                                color = if (detectedSubjectCode.equals(currentSubject, ignoreCase = true)) {
+                                    Color(0xFF34C759) // Green if matches
+                                } else {
+                                    Color(0xFFFF9500) // Orange if different
+                                },
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
             }

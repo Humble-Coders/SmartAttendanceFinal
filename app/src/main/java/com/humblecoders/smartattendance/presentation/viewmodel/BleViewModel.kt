@@ -15,6 +15,7 @@ class BleViewModel(
     val bleState: StateFlow<BleState> = bleRepository.bleState
     val deviceFound: StateFlow<Boolean> = bleRepository.deviceFound
     val detectedDeviceRoom: StateFlow<String?> = bleRepository.detectedDeviceRoom
+    val detectedSubjectCode: StateFlow<String?> = bleRepository.detectedSubjectCode
 
     init {
         initializeBle()
@@ -125,29 +126,24 @@ class BleViewModel(
     }
 
     /**
+     * Get detected subject code
+     */
+    fun getDetectedSubjectCode(): String? {
+        return bleRepository.getDetectedSubjectCode()
+    }
+
+    /**
      * Get room name from detected device (without digits)
      */
     fun getDetectedRoomName(): String? {
-        val deviceRoom = detectedDeviceRoom.value ?: return null
-
-        return if (deviceRoom.length >= 3) {
-            val suffix = deviceRoom.takeLast(3)
-            if (suffix.all { it.isDigit() }) {
-                deviceRoom.dropLast(3)
-            } else {
-                deviceRoom
-            }
-        } else {
-            deviceRoom
-        }
+        return bleRepository.getDetectedRoomName()
     }
 
     /**
      * Check if detected room matches target room
      */
     fun isDetectedRoomMatching(targetRoom: String): Boolean {
-        val detectedRoom = getDetectedRoomName()
-        return detectedRoom?.equals(targetRoom, ignoreCase = true) == true
+        return bleRepository.isDetectedRoomMatching(targetRoom)
     }
 
     /**
