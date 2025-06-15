@@ -33,6 +33,8 @@ class FirebaseRepository {
         Timber.d("📊 Firestore instance: ${firestore.app.name}")
     }
 
+
+
     /**
      * Check if there's an active session for the student's class
      */
@@ -232,40 +234,81 @@ class FirebaseRepository {
             val attendanceList = mutableListOf<AttendanceRecord>()
             val now = LocalDateTime.now()
 
-            // Get attendance from current month
+            // Strategy: Get all documents from collections and filter/sort in memory
+            // This avoids needing composite indexes
+
+            // Check current month
             var currentCollection = getAttendanceCollection(now.year, now.monthValue)
-            var query = currentCollection
-                .whereEqualTo("rollNumber", rollNumber)
-                .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(limit.toLong())
+            Timber.d("📂 Checking current month collection: ${currentCollection.path}")
 
-            var documents = query.get().await()
-            attendanceList.addAll(documents.toObjects(AttendanceRecord::class.java))
+            try {
+                // Simple query - only filter by rollNumber (single field index exists by default)
+                val currentMonthQuery = currentCollection
+                    .whereEqualTo("rollNumber", rollNumber)
+                    .get()
+                    .await()
 
-            // If we need more records and haven't reached the limit, get from previous month
+                val currentMonthRecords = currentMonthQuery.toObjects(AttendanceRecord::class.java)
+                attendanceList.addAll(currentMonthRecords)
+                Timber.d("📊 Current month: ${currentMonthRecords.size} records")
+            } catch (e: Exception) {
+                Timber.w("⚠️ Current month query failed: ${e.message}")
+            }
+
+            // Check previous month if we need more records
             if (attendanceList.size < limit) {
                 val previousMonth = now.minusMonths(1)
-                val remainingLimit = limit - attendanceList.size
-
-                currentCollection = getAttendanceCollection(previousMonth.year, previousMonth.monthValue)
-                query = currentCollection
-                    .whereEqualTo("rollNumber", rollNumber)
-                    .orderBy("timestamp", Query.Direction.DESCENDING)
-                    .limit(remainingLimit.toLong())
+                val previousCollection = getAttendanceCollection(previousMonth.year, previousMonth.monthValue)
+                Timber.d("📂 Checking previous month collection: ${previousCollection.path}")
 
                 try {
-                    documents = query.get().await()
-                    attendanceList.addAll(documents.toObjects(AttendanceRecord::class.java))
+                    val previousMonthQuery = previousCollection
+                        .whereEqualTo("rollNumber", rollNumber)
+                        .get()
+                        .await()
+
+                    val previousMonthRecords = previousMonthQuery.toObjects(AttendanceRecord::class.java)
+                    attendanceList.addAll(previousMonthRecords)
+                    Timber.d("📊 Previous month: ${previousMonthRecords.size} records")
                 } catch (e: Exception) {
                     Timber.w("⚠️ Previous month collection might not exist: ${e.message}")
                 }
             }
 
-            // Sort by timestamp descending
-            attendanceList.sortByDescending { it.timestamp }
+            // Check month before previous if we still need more records
+            if (attendanceList.size < limit) {
+                val twoMonthsAgo = now.minusMonths(2)
+                val oldCollection = getAttendanceCollection(twoMonthsAgo.year, twoMonthsAgo.monthValue)
+                Timber.d("📂 Checking two months ago collection: ${oldCollection.path}")
 
-            Timber.d("✅ Retrieved ${attendanceList.size} attendance records for $rollNumber")
-            Result.success(attendanceList)
+                try {
+                    val oldMonthQuery = oldCollection
+                        .whereEqualTo("rollNumber", rollNumber)
+                        .get()
+                        .await()
+
+                    val oldMonthRecords = oldMonthQuery.toObjects(AttendanceRecord::class.java)
+                    attendanceList.addAll(oldMonthRecords)
+                    Timber.d("📊 Two months ago: ${oldMonthRecords.size} records")
+                } catch (e: Exception) {
+                    Timber.w("⚠️ Two months ago collection might not exist: ${e.message}")
+                }
+            }
+
+            // Sort in memory by timestamp descending (newest first)
+            val sortedList = attendanceList
+                .filter { it.timestamp != null } // Filter out records without timestamp
+                .sortedByDescending { it.timestamp!!.toDate().time }
+                .take(limit) // Take only the required number
+
+            Timber.d("✅ Total retrieved and sorted: ${sortedList.size} attendance records for $rollNumber")
+
+            // Log each record for debugging
+            sortedList.forEachIndexed { index, record ->
+                Timber.d("📝 Record $index: ${record.subject} on ${record.date} at ${record.getFormattedTime()}")
+            }
+
+            Result.success(sortedList)
         } catch (e: Exception) {
             Timber.e(e, "❌ Failed to get attendance history for $rollNumber")
             Result.failure(e)
@@ -282,26 +325,36 @@ class FirebaseRepository {
             val attendanceList = mutableListOf<AttendanceRecord>()
             val now = LocalDateTime.now()
 
-            // Get attendance from current and previous months for more comprehensive stats
-            for (monthOffset in 0..2) { // Current month and 2 previous months
+            // Get attendance from current and previous months for comprehensive stats
+            for (monthOffset in 0..3) { // Current month and 3 previous months
                 val targetMonth = now.minusMonths(monthOffset.toLong())
                 val collection = getAttendanceCollection(targetMonth.year, targetMonth.monthValue)
 
-                var query = collection.whereEqualTo("rollNumber", rollNumber)
-                if (subject != null) {
-                    query = query.whereEqualTo("subject", subject)
-                }
-
                 try {
-                    val documents = query.get().await()
-                    attendanceList.addAll(documents.toObjects(AttendanceRecord::class.java))
+                    // Simple query without orderBy to avoid index requirements
+                    val query = collection
+                        .whereEqualTo("rollNumber", rollNumber)
+                        .get()
+                        .await()
+
+                    val monthRecords = query.toObjects(AttendanceRecord::class.java)
+                    attendanceList.addAll(monthRecords)
+
+                    Timber.d("📊 Month ${targetMonth.year}-${targetMonth.monthValue}: ${monthRecords.size} records")
                 } catch (e: Exception) {
                     Timber.w("⚠️ Collection for ${targetMonth.year}-${targetMonth.monthValue} might not exist")
                 }
             }
 
-            val totalClasses = attendanceList.size
-            val presentClasses = attendanceList.count { it.present }
+            // Filter by subject if specified (done in memory)
+            val filteredList = if (subject != null) {
+                attendanceList.filter { it.subject.equals(subject, ignoreCase = true) }
+            } else {
+                attendanceList
+            }
+
+            val totalClasses = filteredList.size
+            val presentClasses = filteredList.count { it.present }
             val percentage = if (totalClasses > 0) {
                 (presentClasses.toFloat() / totalClasses.toFloat() * 100)
             } else 0f
@@ -320,7 +373,6 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
-
     /**
      * Save or update student profile (keeping for compatibility)
      */
