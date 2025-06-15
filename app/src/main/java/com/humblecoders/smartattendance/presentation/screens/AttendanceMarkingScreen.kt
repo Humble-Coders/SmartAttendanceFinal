@@ -69,6 +69,12 @@ fun AttendanceMarkingScreen(
     )
 
     // Function to mark attendance with all required data
+// In AttendanceMarkingScreen.kt - Replace the function inside the composable
+
+    // Function to mark attendance with all required data
+// In AttendanceMarkingScreen.kt - Replace the function inside the composable
+
+    // Function to mark attendance with all required data
     fun markAttendanceWithSession(rollNumber: String) {
         if (isProcessingAttendance) {
             Timber.w("⚠️ Attendance already being processed, ignoring duplicate request")
@@ -89,16 +95,21 @@ fun AttendanceMarkingScreen(
         }
 
         isProcessingAttendance = true
-        Timber.d("🎯 Starting attendance marking process")
+        // Use the isExtra field from the session data
+        val isExtra = session.isExtra
+        val attendanceType = if (isExtra) "extra" else "regular"
+
+        Timber.d("🎯 Starting $attendanceType attendance marking process")
         Timber.d("📋 Student: ${profileData.name} (${rollNumber}) from ${profileData.className}")
-        Timber.d("📚 Session: ${session.subject} in ${session.room} (${session.type})")
+        Timber.d("📚 Session: ${session.subject} in ${session.room} (${session.type}) - Extra: ${session.isExtra}")
         Timber.d("📡 Device Room: $detectedDeviceRoom")
 
         attendanceViewModel.markAttendance(
             rollNumber = rollNumber,
             deviceRoom = detectedDeviceRoom ?: "",
+            isExtra = isExtra, // Use session's isExtra field
             onSuccess = {
-                Timber.i("🎉 Attendance marked successfully!")
+                Timber.i("🎉 $attendanceType attendance marked successfully!")
 
                 // Create success data with all information
                 val successData = AttendanceSuccessData(
@@ -118,7 +129,7 @@ fun AttendanceMarkingScreen(
                 onNavigateToSuccess(successData)
             },
             onError = { error ->
-                Timber.e("❌ Attendance marking failed: $error")
+                Timber.e("❌ $attendanceType attendance marking failed: $error")
                 errorMessage = error
                 isProcessingAttendance = false
             }

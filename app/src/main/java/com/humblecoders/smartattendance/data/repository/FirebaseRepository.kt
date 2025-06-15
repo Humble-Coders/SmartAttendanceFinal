@@ -54,12 +54,13 @@ class FirebaseRepository {
                 if (rawData != null) {
                     // Manual session creation to avoid deserialization issues
                     val session = ActiveSession(
-                        isActive = (rawData["isActive"] as? Boolean) ?: false,
+                        isActive = (rawData["isActive"] as? Boolean) == true,
                         subject = (rawData["subject"] as? String) ?: "",
                         room = (rawData["room"] as? String) ?: "",
                         type = (rawData["type"] as? String) ?: "",
                         sessionId = (rawData["sessionId"] as? String) ?: "",
-                        date = (rawData["date"] as? String) ?: ""
+                        date = (rawData["date"] as? String) ?: "",
+                        isExtra = (rawData["isExtra"] as? Boolean) == true
                     )
 
                     Timber.d("📚 Session created: isActive=${session.isActive}, subject=${session.subject}, room=${session.room}")
@@ -108,15 +109,17 @@ class FirebaseRepository {
     /**
      * Check if attendance already marked today for student in subject
      */
+    // In FirebaseRepository.kt - Replace the existing method
     suspend fun isAttendanceAlreadyMarked(
         rollNumber: String,
         subject: String,
         group: String,
-        type: String
+        type: String,
+        isExtra: Boolean = false
     ): Result<Boolean> {
         return try {
             val today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-            Timber.d("🔍 Checking if attendance already marked for $rollNumber in $subject on $today")
+            Timber.d("🔍 Checking if attendance already marked for $rollNumber in $subject on $today (isExtra: $isExtra)")
 
             val attendanceCollection = getCurrentAttendanceCollection()
             val query = attendanceCollection
@@ -125,12 +128,13 @@ class FirebaseRepository {
                 .whereEqualTo("group", group)
                 .whereEqualTo("type", type)
                 .whereEqualTo("date", today)
+                .whereEqualTo("isExtra", isExtra)
                 .limit(1)
 
             val documents = query.get().await()
             val alreadyMarked = !documents.isEmpty
 
-            Timber.d("✅ Attendance already marked check: $alreadyMarked (found ${documents.size()} records)")
+            Timber.d("✅ Attendance already marked check: $alreadyMarked (found ${documents.size()} records) isExtra: $isExtra")
             Result.success(alreadyMarked)
         } catch (e: Exception) {
             Timber.e(e, "❌ Failed to check existing attendance for $rollNumber")
@@ -141,22 +145,24 @@ class FirebaseRepository {
     /**
      * Mark attendance in the new structure
      */
+    // In FirebaseRepository.kt - Replace the existing method
     suspend fun markAttendance(
         rollNumber: String,
         studentName: String,
         subject: String,
         group: String,
         type: String,
-        deviceRoom: String
+        deviceRoom: String,
+        isExtra: Boolean = false
     ): Result<AttendanceResponse> {
         return try {
-            Timber.d("🚀 Starting Firebase attendance marking process")
+            Timber.d("🚀 Starting Firebase attendance marking process (isExtra: $isExtra)")
             Timber.d("📋 Details: $rollNumber, $subject, $group, $type")
 
             val today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
-            // Check if already marked today
-            val alreadyMarkedResult = isAttendanceAlreadyMarked(rollNumber, subject, group, type)
+            // Check if already marked today for this type (regular or extra)
+            val alreadyMarkedResult = isAttendanceAlreadyMarked(rollNumber, subject, group, type, isExtra)
             if (alreadyMarkedResult.isFailure) {
                 return Result.success(AttendanceResponse(
                     success = false,
@@ -165,15 +171,16 @@ class FirebaseRepository {
             }
 
             if (alreadyMarkedResult.getOrNull() == true) {
-                Timber.w("⚠️ Attendance already marked for today")
+                val attendanceType = if (isExtra) "extra" else "regular"
+                Timber.w("⚠️ $attendanceType attendance already marked for today")
                 return Result.success(AttendanceResponse(
                     success = false,
-                    message = "Attendance already marked for today",
+                    message = "${attendanceType.capitalize()} attendance already marked for today",
                     alreadyMarked = true
                 ))
             }
 
-            // Create attendance record
+            // Create attendance record with isExtra field
             val currentTime = Timestamp.now()
             val attendanceRecord = AttendanceRecord(
                 date = today,
@@ -183,7 +190,8 @@ class FirebaseRepository {
                 type = type,
                 present = true,
                 timestamp = currentTime,
-                deviceRoom = deviceRoom
+                deviceRoom = deviceRoom,
+                isExtra = isExtra
             )
 
             Timber.d("📝 Created attendance record: $attendanceRecord")
@@ -193,11 +201,12 @@ class FirebaseRepository {
             val documentRef = attendanceCollection.add(attendanceRecord).await()
             val attendanceId = documentRef.id
 
-            Timber.i("🎉 Attendance marked successfully: $attendanceId for $rollNumber")
+            val attendanceType = if (isExtra) "extra" else "regular"
+            Timber.i("🎉 $attendanceType attendance marked successfully: $attendanceId for $rollNumber")
 
             Result.success(AttendanceResponse(
                 success = true,
-                message = "Attendance marked successfully",
+                message = "${attendanceType.capitalize()} attendance marked successfully",
                 attendanceId = attendanceId
             ))
 

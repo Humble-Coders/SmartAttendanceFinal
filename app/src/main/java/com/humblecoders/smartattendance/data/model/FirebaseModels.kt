@@ -13,7 +13,9 @@ data class ActiveSession(
     @PropertyName("room") val room: String,
     @PropertyName("type") val type: String, // "lect", "lab", "tut"
     @PropertyName("sessionId") val sessionId: String,
-    @PropertyName("date") val date: String // YYYY-MM-DD format
+    @PropertyName("date") val date: String, // YYYY-MM-DD format
+    @PropertyName("isExtra") val isExtra: Boolean  // NEW FIELD
+
 ) {
     // No-argument constructor required by Firestore
     constructor() : this(
@@ -22,7 +24,9 @@ data class ActiveSession(
         room = "",
         type = "",
         sessionId = "",
-        date = ""
+        date = "",
+        isExtra = false
+
     )
 }
 
@@ -37,7 +41,9 @@ data class AttendanceRecord(
     @PropertyName("type") val type: String = "", // "lect", "lab", "tut"
     @PropertyName("present") val present: Boolean = true,
     @PropertyName("timestamp") val timestamp: Timestamp? = null,
-    @PropertyName("deviceRoom") val deviceRoom: String = "" // BLE device name with 3 digits
+    @PropertyName("deviceRoom") val deviceRoom: String = "" ,// BLE device name with 3 digits
+    @PropertyName("isExtra") val isExtra: Boolean = false // NEW FIELD
+
 ) {
     // Helper function to check if attendance is for today
     fun isToday(): Boolean {

@@ -70,9 +70,11 @@ class AttendanceViewModel(
     /**
      * Mark attendance with the new structure (updated to use session data)
      */
+    // In AttendanceViewModel.kt - Replace the existing method
     fun markAttendance(
         rollNumber: String,
         deviceRoom: String = "",
+        isExtra: Boolean = false,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
@@ -80,8 +82,9 @@ class AttendanceViewModel(
             _isLoading.value = true
 
             try {
-                Timber.d("🎯 AttendanceViewModel: Starting attendance marking")
-                Timber.d("📋 Parameters: rollNumber=$rollNumber, deviceRoom=$deviceRoom")
+                val attendanceType = if (isExtra) "extra" else "regular"
+                Timber.d("🎯 AttendanceViewModel: Starting $attendanceType attendance marking")
+                Timber.d("📋 Parameters: rollNumber=$rollNumber, deviceRoom=$deviceRoom, isExtra=$isExtra")
 
                 // Get student profile data
                 val profileData = profileRepository.profileData.first()
@@ -101,15 +104,16 @@ class AttendanceViewModel(
                 }
 
                 Timber.d("👤 Student info: name=$studentName, rollNumber=$rollNumber, class=$className")
-                Timber.d("📚 Session info: subject=${session.subject}, room=${session.room}, type=${session.type}")
+                Timber.d("📚 Session info: subject=${session.subject}, room=${session.room}, type=${session.type}, isExtra=${session.isExtra}")
 
                 // Validate attendance eligibility
-                Timber.d("🔍 Validating attendance eligibility...")
+                Timber.d("🔍 Validating $attendanceType attendance eligibility...")
                 val eligibilityResult = attendanceRepository.validateAttendanceEligibility(
                     rollNumber = rollNumber,
                     subject = session.subject,
                     group = className,
-                    type = session.type
+                    type = session.type,
+                    isExtra = isExtra
                 )
 
                 if (eligibilityResult.isFailure) {
@@ -126,22 +130,23 @@ class AttendanceViewModel(
                     return@launch
                 }
 
-                Timber.d("✅ Eligibility check passed, proceeding to mark attendance")
+                Timber.d("✅ Eligibility check passed, proceeding to mark $attendanceType attendance")
 
                 // Mark attendance with session data
-                Timber.d("📡 Calling repository to mark attendance...")
+                Timber.d("📡 Calling repository to mark $attendanceType attendance...")
                 val result = attendanceRepository.markAttendance(
                     rollNumber = rollNumber,
                     studentName = studentName,
                     subject = session.subject,
                     group = className,
                     type = session.type,
-                    deviceRoom = deviceRoom
+                    deviceRoom = deviceRoom,
+                    isExtra = isExtra
                 )
 
                 if (result.isSuccess) {
                     val response = result.getOrNull()!!
-                    Timber.i("🎉 Attendance marked successfully: ${response.attendanceId}")
+                    Timber.i("🎉 $attendanceType attendance marked successfully: ${response.attendanceId}")
 
                     // Refresh attendance data
                     refreshAttendanceData(rollNumber)
@@ -149,7 +154,7 @@ class AttendanceViewModel(
                     onSuccess()
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Unknown error"
-                    Timber.e("❌ Attendance marking failed: $error")
+                    Timber.e("❌ $attendanceType attendance marking failed: $error")
                     onError(error)
                 }
 

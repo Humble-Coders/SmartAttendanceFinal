@@ -33,16 +33,19 @@ class AttendanceRepository {
     /**
      * Mark attendance with the new structure
      */
+    // In AttendanceRepository.kt - Replace the existing method
     suspend fun markAttendance(
         rollNumber: String,
         studentName: String,
         subject: String,
         group: String,
         type: String,
-        deviceRoom: String
+        deviceRoom: String,
+        isExtra: Boolean = false
     ): Result<AttendanceResponse> {
         return try {
-            Timber.d("🚀 Starting attendance marking process")
+            val attendanceType = if (isExtra) "extra" else "regular"
+            Timber.d("🚀 Starting $attendanceType attendance marking process")
             Timber.d("📋 Details: rollNumber=$rollNumber, subject=$subject, group=$group, type=$type")
 
             val result = firebaseRepository.markAttendance(
@@ -51,16 +54,17 @@ class AttendanceRepository {
                 subject = subject,
                 group = group,
                 type = type,
-                deviceRoom = deviceRoom
+                deviceRoom = deviceRoom,
+                isExtra = isExtra
             )
 
             if (result.isSuccess) {
                 val response = result.getOrNull()!!
                 if (response.success) {
-                    Timber.i("✅ Attendance marked successfully: ${response.attendanceId}")
+                    Timber.i("✅ $attendanceType attendance marked successfully: ${response.attendanceId}")
                     Result.success(response)
                 } else {
-                    Timber.w("⚠️ Attendance marking failed: ${response.message}")
+                    Timber.w("⚠️ $attendanceType attendance marking failed: ${response.message}")
                     Result.failure(Exception("Attendance marking failed: ${response.message}"))
                 }
             } else {
@@ -73,7 +77,6 @@ class AttendanceRepository {
             Result.failure(Exception("Unexpected error: ${e.message}"))
         }
     }
-
     /**
      * Get attendance history for a student
      */
@@ -168,18 +171,21 @@ class AttendanceRepository {
     /**
      * Validate attendance eligibility (check for duplicates)
      */
+    // In AttendanceRepository.kt - Replace the existing method
     suspend fun validateAttendanceEligibility(
         rollNumber: String,
         subject: String,
         group: String,
-        type: String
+        type: String,
+        isExtra: Boolean = false
     ): Result<AttendanceEligibility> {
         return try {
-            Timber.d("🔍 Validating attendance eligibility for $rollNumber")
+            val attendanceType = if (isExtra) "extra" else "regular"
+            Timber.d("🔍 Validating $attendanceType attendance eligibility for $rollNumber")
 
-            // Check if already marked today
+            // Check if already marked today for this specific type (regular or extra)
             val alreadyMarkedResult = firebaseRepository.isAttendanceAlreadyMarked(
-                rollNumber, subject, group, type
+                rollNumber, subject, group, type, isExtra
             )
 
             if (alreadyMarkedResult.isFailure) {
@@ -193,19 +199,19 @@ class AttendanceRepository {
             val alreadyMarked = alreadyMarkedResult.getOrNull() ?: false
 
             if (alreadyMarked) {
-                Timber.w("⚠️ Attendance already marked for today")
+                Timber.w("⚠️ $attendanceType attendance already marked for today")
                 return Result.success(AttendanceEligibility(
                     isEligible = false,
-                    reason = "Attendance already marked for today",
+                    reason = "${attendanceType.capitalize()} attendance already marked for today",
                     alreadyMarked = true
                 ))
             }
 
             // Eligible if not already marked
-            Timber.d("✅ Student is eligible for attendance")
+            Timber.d("✅ Student is eligible for $attendanceType attendance")
             Result.success(AttendanceEligibility(
                 isEligible = true,
-                reason = "Eligible for attendance"
+                reason = "Eligible for $attendanceType attendance"
             ))
 
         } catch (e: Exception) {
