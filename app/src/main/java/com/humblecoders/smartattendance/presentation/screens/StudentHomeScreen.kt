@@ -2,6 +2,7 @@ package com.humblecoders.smartattendance.presentation.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +33,8 @@ import com.humblecoders.smartattendance.utils.BluetoothManager
 import com.humblecoders.smartattendance.presentation.components.BluetoothEnableDialog
 import com.humblecoders.smartattendance.presentation.components.BluetoothPermissionInstructionsDialog
 import com.humblecoders.smartattendance.utils.AppLifecycleObserver
+import androidx.compose.foundation.lazy.items
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +83,15 @@ fun StudentHomeScreen(
 
     val isAttendanceCompletedToday by attendanceViewModel.isAttendanceCompletedToday.collectAsState()
 
+
+
+    // Add this LaunchedEffect in StudentHomeScreen.kt, after the other LaunchedEffects:
+    LaunchedEffect(profileData.rollNumber) {
+        if (profileData.rollNumber.isNotBlank()) {
+            Timber.d("📚 Loading attendance history for home screen")
+            attendanceViewModel.loadAttendanceHistory()
+        }
+    }
 
     fun requestBluetoothPermissions(
         bluetoothManager: BluetoothManager,
@@ -341,7 +353,7 @@ fun StudentHomeScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "Attendance",
+                        "Smart Attend",
                         fontWeight = FontWeight.SemiBold
                     )
                 },
@@ -373,79 +385,121 @@ fun StudentHomeScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Header Section
+            // Replace the existing Header Section Card with this:
+            // 1. UPDATED Header Section Card (with symmetrical layout):
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
+                        .padding(24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Student Avatar
-                    Box(
-                        modifier = Modifier
-                            .size(60.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF007AFF).copy(alpha = 0.1f)),
-                        contentAlignment = Alignment.Center
+                    // Left side - Text content
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Student Avatar",
-                            modifier = Modifier.size(32.dp),
-                            tint = Color(0xFF007AFF)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
+                        // Welcome text
                         Text(
-                            text = "Welcome back, ${profileData.name}",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF1D1D1F)
+                            text = "Welcome back,",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = Color(0xFF8E8E93),
+                            letterSpacing = 0.5.sp
                         )
 
+                        // Student name
+                        Text(
+                            text = profileData.name,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1D1D1F),
+                            lineHeight = 26.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Student details in symmetrical columns
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(top = 4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(24.dp)
                         ) {
-                            // Roll Number Chip
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFF007AFF).copy(alpha = 0.1f)
-                                ),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
+                            // Roll Number Column
+                            Column {
                                 Text(
-                                    text = "Roll: ${profileData.rollNumber}",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    text = "Roll No",
                                     fontSize = 12.sp,
                                     color = Color(0xFF007AFF),
                                     fontWeight = FontWeight.Medium
                                 )
+                                Text(
+                                    text = profileData.rollNumber,
+                                    fontSize = 15.sp,
+                                    color = Color(0xFF1D1D1F),
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
 
-                            // Class Chip
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFF34C759).copy(alpha = 0.1f)
-                                ),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
+                            // Class Column
+                            Column {
                                 Text(
-                                    text = "Class: ${profileData.className}",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    text = "Class",
                                     fontSize = 12.sp,
                                     color = Color(0xFF34C759),
                                     fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = profileData.className,
+                                    fontSize = 15.sp,
+                                    color = Color(0xFF1D1D1F),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(20.dp))
+
+                    // Right side - Profile Avatar (same as before)
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                    colors = listOf(
+                                        Color(0xFF007AFF).copy(alpha = 0.1f),
+                                        Color(0xFF007AFF).copy(alpha = 0.05f)
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(66.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF007AFF).copy(alpha = 0.08f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF007AFF).copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Student Avatar",
+                                    modifier = Modifier.size(28.dp),
+                                    tint = Color(0xFF007AFF)
                                 )
                             }
                         }
@@ -455,7 +509,8 @@ fun StudentHomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Session Status Card
+
+// 2. UPDATED Session Status Card (remove settings icon, add icons, show type):
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -496,30 +551,43 @@ fun StudentHomeScreen(
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFF1D1D1F)
                         )
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            modifier = Modifier.size(20.dp),
-                            tint = Color(0xFF8E8E93)
-                        )
                     }
 
                     if (isSessionActive) {
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Column {
+                            // Subject
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MenuBook,
+                                    contentDescription = "Subject",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color(0xFF8E8E93)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "Subject: $currentSubject",
                                     fontSize = 14.sp,
                                     color = Color(0xFF8E8E93)
                                 )
+                            }
+
+                            // Room
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Room,
+                                    contentDescription = "Room",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color(0xFF8E8E93)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "Room: $currentRoom",
                                     fontSize = 14.sp,
@@ -527,11 +595,23 @@ fun StudentHomeScreen(
                                 )
                             }
 
-                            Text(
-                                text = "Type: $currentType",
-                                fontSize = 14.sp,
-                                color = Color(0xFF8E8E93)
-                            )
+                            // Type
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Category,
+                                    contentDescription = "Type",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color(0xFF8E8E93)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Type: $currentType",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF8E8E93)
+                                )
+                            }
                         }
                     }
                 }
@@ -842,90 +922,111 @@ fun StudentHomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Recent Attendance Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
+
+
+// Replace the existing Recent Attendance Card content with this:
+// Recent Attendance Card
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
                     ) {
-                        Text(
-                            text = "Recent Attendance",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF1D1D1F)
-                        )
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = "View All",
-                            modifier = Modifier.size(20.dp),
-                            tint = Color(0xFF8E8E93)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (attendanceHistory.isEmpty()) {
-                        Text(
-                            text = "No recent attendance records",
-                            fontSize = 14.sp,
-                            color = Color(0xFF8E8E93),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        // Show recent attendance items
-                        attendanceHistory.take(3).forEach { record ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp)
+                        ) {
+                            // Header Row (keep this same)
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "✅",
-                                    fontSize = 16.sp
+                                    text = "Recent Attendance",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1D1D1F)
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = record.subject,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color(0xFF1D1D1F)
-                                    )
-                                    Text(
-                                        text = "${record.type.uppercase()} • ${record.getFormattedTime()}",
-                                        fontSize = 12.sp,
-                                        color = Color(0xFF8E8E93)
+                                Spacer(modifier = Modifier.weight(1f))
+
+                                IconButton(
+                                    onClick = {
+                                        if (profileData.rollNumber.isNotBlank()) {
+                                            Timber.d("🔄 Manual refresh of attendance history")
+                                            attendanceViewModel.loadAttendanceHistory()
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh",
+                                        modifier = Modifier.size(20.dp),
+                                        tint = Color(0xFF8E8E93)
                                     )
                                 }
+                            }
 
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = "Details",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = Color(0xFF8E8E93)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // REPLACE the existing if-else block with this LazyColumn implementation:
+                            if (attendanceHistory.isEmpty()) {
+                                Text(
+                                    text = "No recent attendance records",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF8E8E93),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
+                            } else {
+                                // LazyColumn for scrollable attendance history
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp), // Set fixed height for scrollable area
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(attendanceHistory) { record ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "✅",
+                                                fontSize = 16.sp
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = record.subject,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = Color(0xFF1D1D1F)
+                                                )
+                                                Text(
+                                                    text = "${record.type.uppercase()} • ${record.getFormattedTime()}",
+                                                    fontSize = 12.sp,
+                                                    color = Color(0xFF8E8E93)
+                                                )
+                                            }
+
+                                            Icon(
+                                                imageVector = Icons.Default.ChevronRight,
+                                                contentDescription = "Details",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = Color(0xFF8E8E93)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
             Spacer(modifier = Modifier.height(24.dp))
         }

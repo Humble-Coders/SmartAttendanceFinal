@@ -52,7 +52,40 @@ class AttendanceViewModel(
      * This performs all checks except roll number verification
      */
     // REPLACE the validateAttendanceBeforeAuth method signature with this:
+    init {
+        // Add this line to start observing profile changes
+        observeProfileAndLoadHistory()
+    }
 
+    // Change from private to public:
+    fun refreshAttendanceData(rollNumber: String) {
+        viewModelScope.launch {
+            try {
+                Timber.d("🔄 Refreshing attendance data for $rollNumber")
+
+                // Refresh history
+                val historyResult = attendanceRepository.getAttendanceHistory(rollNumber)
+                if (historyResult.isSuccess) {
+                    _attendanceHistory.value = historyResult.getOrNull() ?: emptyList()
+                    Timber.d("✅ Refreshed attendance history: ${_attendanceHistory.value.size} records")
+                } else {
+                    Timber.e("❌ Failed to refresh attendance history")
+                }
+
+                // Refresh stats
+                val statsResult = attendanceRepository.getAttendanceStats(rollNumber)
+                if (statsResult.isSuccess) {
+                    _attendanceStats.value = statsResult.getOrNull()
+                    Timber.d("✅ Refreshed attendance stats")
+                } else {
+                    Timber.e("❌ Failed to refresh attendance stats")
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Error refreshing attendance data")
+            }
+        }
+    }
 
 
     /**
@@ -425,34 +458,6 @@ class AttendanceViewModel(
     /**
      * Refresh all attendance data for current student
      */
-    private fun refreshAttendanceData(rollNumber: String) {
-        viewModelScope.launch {
-            try {
-                Timber.d("🔄 Refreshing attendance data for $rollNumber")
-
-                // Refresh history
-                val historyResult = attendanceRepository.getAttendanceHistory(rollNumber)
-                if (historyResult.isSuccess) {
-                    _attendanceHistory.value = historyResult.getOrNull() ?: emptyList()
-                    Timber.d("✅ Refreshed attendance history")
-                } else {
-                    Timber.e("❌ Failed to refresh attendance history")
-                }
-
-                // Refresh stats
-                val statsResult = attendanceRepository.getAttendanceStats(rollNumber)
-                if (statsResult.isSuccess) {
-                    _attendanceStats.value = statsResult.getOrNull()
-                    Timber.d("✅ Refreshed attendance stats")
-                } else {
-                    Timber.e("❌ Failed to refresh attendance stats")
-                }
-
-            } catch (e: Exception) {
-                Timber.e(e, "💥 Error refreshing attendance data")
-            }
-        }
-    }
 
     /**
      * Get today's attendance for display
@@ -476,6 +481,7 @@ class AttendanceViewModel(
     /**
      * Initialize ViewModel - sync profile and load data
      */
+// In initialize() method, after loadAttendanceStats(), add:
     fun initialize() {
         viewModelScope.launch {
             try {
@@ -503,6 +509,18 @@ class AttendanceViewModel(
 
             } catch (e: Exception) {
                 Timber.e(e, "💥 Error initializing AttendanceViewModel")
+            }
+        }
+    }
+
+    // Add this method to AttendanceViewModel class:
+    fun observeProfileAndLoadHistory() {
+        viewModelScope.launch {
+            profileRepository.profileData.collect { profile ->
+                if (profile.rollNumber.isNotBlank() && profile.name.isNotBlank()) {
+                    Timber.d("📚 Profile changed, reloading attendance history")
+                    loadAttendanceHistory()
+                }
             }
         }
     }
