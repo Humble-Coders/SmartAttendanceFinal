@@ -40,6 +40,8 @@ fun AttendanceMarkingScreen(
     var hasCameraPermission by remember { mutableStateOf(false) }
     var permissionDenied by remember { mutableStateOf(false) }
     var isProcessingAttendance by remember { mutableStateOf(false) }
+    var isValidatingAttendance by remember { mutableStateOf(false) }
+    var attendanceValidated by remember { mutableStateOf(false) }
 
     // Screen lifecycle logging
     LaunchedEffect(Unit) {
@@ -55,6 +57,47 @@ fun AttendanceMarkingScreen(
         }
     }
 
+    // NEW: Function to perform all attendance checks before Face.io auth
+    fun performAttendanceValidation() {
+        val session = currentSession
+        if (session == null) {
+            Timber.e("❌ No active session available for attendance validation")
+            errorMessage = "No active session found. Please return to home and try again."
+            return
+        }
+
+        if (profileData.className.isBlank()) {
+            Timber.e("❌ No class information available")
+            errorMessage = "Class information not found. Please update your profile."
+            return
+        }
+
+        isValidatingAttendance = true
+        val isExtra = session.isExtra
+        val attendanceType = if (isExtra) "extra" else "regular"
+
+        Timber.d("🔍 Starting pre-authentication attendance validation")
+        Timber.d("📋 Student: ${profileData.name} (${profileData.rollNumber}) from ${profileData.className}")
+        Timber.d("📚 Session: ${session.subject} in ${session.room} (${session.type}) - Extra: ${session.isExtra}")
+        Timber.d("📡 Device Room: $detectedDeviceRoom")
+
+        attendanceViewModel.validateAttendanceBeforeAuth(
+            rollNumber = profileData.rollNumber,
+            deviceRoom = detectedDeviceRoom ?: "",
+            isExtra = isExtra,
+            onSuccess = {
+                Timber.i("✅ $attendanceType attendance validation successful")
+                attendanceValidated = true
+                isValidatingAttendance = false
+            },
+            onError = { error ->
+                Timber.e("❌ $attendanceType attendance validation failed: $error")
+                errorMessage = error
+                isValidatingAttendance = false
+            }
+        )
+    }
+
     // Handle camera permission
     CameraPermissionHandler(
         onPermissionGranted = {
@@ -68,52 +111,43 @@ fun AttendanceMarkingScreen(
         }
     )
 
-    // Function to mark attendance with all required data
-// In AttendanceMarkingScreen.kt - Replace the function inside the composable
+    // NEW: Perform attendance validation when camera permission is granted
+    LaunchedEffect(hasCameraPermission) {
+        if (hasCameraPermission && !attendanceValidated && !isValidatingAttendance) {
+            performAttendanceValidation()
+        }
+    }
 
-    // Function to mark attendance with all required data
-// In AttendanceMarkingScreen.kt - Replace the function inside the composable
 
-    // Function to mark attendance with all required data
-// REPLACE in AttendanceMarkingScreen.kt
-// Replace the markAttendanceWithSession function:
 
-    fun markAttendanceWithSession(rollNumber: String) {
+    // Function to mark attendance with roll number validation only
+    fun markAttendanceWithRollNumber(rollNumber: String) {
         if (isProcessingAttendance) {
             Timber.w("⚠️ Attendance already being processed, ignoring duplicate request")
             return
         }
 
-        val session = currentSession
-        if (session == null) {
-            Timber.e("❌ No active session available for attendance marking")
-            errorMessage = "No active session found. Please return to home and try again."
+        // Only validate roll number mismatch
+        if (rollNumber != profileData.rollNumber) {
+            Timber.w("⚠️ Roll number mismatch: authenticated=$rollNumber, profile=${profileData.rollNumber}")
+            errorMessage = "Roll number mismatch. Please contact administrator."
             return
         }
 
-        if (profileData.className.isBlank()) {
-            Timber.e("❌ No class information available")
-            errorMessage = "Class information not found. Please update your profile."
-            return
-        }
-
+        val session = currentSession!!
         isProcessingAttendance = true
         val isExtra = session.isExtra
-        val attendanceType = if (isExtra) "extra" else "regular"
 
-        Timber.d("🎯 Starting $attendanceType attendance marking process")
-        Timber.d("📋 Student: ${profileData.name} (${rollNumber}) from ${profileData.className}")
-        Timber.d("📚 Session: ${session.subject} in ${session.room} (${session.type}) - Extra: ${session.isExtra}")
-        Timber.d("📡 Device Room: $detectedDeviceRoom")
+        Timber.d("🎯 Starting final attendance marking (post Face.io auth)")
+        Timber.d("📋 Authenticated roll number: $rollNumber")
 
-        attendanceViewModel.markAttendance(
+        attendanceViewModel.markAttendanceAfterAuth(
             rollNumber = rollNumber,
             deviceRoom = detectedDeviceRoom ?: "",
             isExtra = isExtra,
             onSuccess = {
-                Timber.i("🎉 $attendanceType attendance marked successfully!")
+                Timber.i("🎉 Attendance marked successfully after Face.io auth!")
 
-                // FIX: Create success data with proper string encoding for navigation
                 val successData = AttendanceSuccessData(
                     rollNumber = rollNumber,
                     studentName = profileData.name,
@@ -126,12 +160,10 @@ fun AttendanceMarkingScreen(
 
                 Timber.d("✅ Created success data: $successData")
                 isProcessingAttendance = false
-
-                // FIX: Navigate to success screen with proper route encoding
                 onNavigateToSuccess(successData)
             },
             onError = { error ->
-                Timber.e("❌ $attendanceType attendance marking failed: $error")
+                Timber.e("❌ Final attendance marking failed: $error")
                 errorMessage = error
                 isProcessingAttendance = false
             }
@@ -148,7 +180,7 @@ fun AttendanceMarkingScreen(
                             Timber.d("🔙 User clicked back button")
                             onNavigateBack()
                         },
-                        enabled = !isProcessingAttendance
+                        enabled = !isProcessingAttendance && !isValidatingAttendance
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -183,6 +215,11 @@ fun AttendanceMarkingScreen(
                     LoadingContent(message = "Requesting camera permission...")
                 }
 
+                isValidatingAttendance -> {
+                    Timber.d("🎬 Showing attendance validation content")
+                    LoadingContent(message = "Validating attendance eligibility...")
+                }
+
                 errorMessage != null -> {
                     Timber.d("🎬 Showing error content: $errorMessage")
                     AttendanceErrorContent(
@@ -190,6 +227,10 @@ fun AttendanceMarkingScreen(
                         onRetry = {
                             Timber.d("🔄 User retrying after error")
                             errorMessage = null
+                            attendanceValidated = false
+                            if (hasCameraPermission) {
+                                performAttendanceValidation()
+                            }
                         },
                         onCancel = {
                             Timber.d("🔙 User cancelled after error")
@@ -203,36 +244,25 @@ fun AttendanceMarkingScreen(
                     ProcessingAttendanceContent()
                 }
 
+                !attendanceValidated -> {
+                    Timber.d("🎬 Waiting for attendance validation")
+                    LoadingContent(message = "Preparing authentication...")
+                }
+
                 else -> {
                     Timber.d("🎬 Showing Face.io authentication WebView")
-                    // Validate session before showing WebView
-                    if (currentSession == null) {
-                        LaunchedEffect(Unit) {
-                            errorMessage = "No active session found. Please return to home and try again."
+                    FaceIoAuthWebView(
+                        modifier = Modifier.fillMaxSize(),
+                        onAuthenticated = { rollNumber ->
+                            Timber.d("🔥 WEBVIEW CALLBACK TRIGGERED!")
+                            Timber.d("🆔 Authenticated roll number: $rollNumber")
+                            markAttendanceWithRollNumber(rollNumber)
+                        },
+                        onError = { error ->
+                            Timber.e("❌ WebView authentication error: $error")
+                            errorMessage = "Face authentication failed: $error"
                         }
-                    } else {
-                        FaceIoAuthWebView(
-                            modifier = Modifier.fillMaxSize(),
-                            onAuthenticated = { rollNumber ->
-                                Timber.d("🔥 WEBVIEW CALLBACK TRIGGERED!")
-                                Timber.d("🆔 Authenticated roll number: $rollNumber")
-
-                                // Validate roll number matches profile
-                                if (rollNumber != profileData.rollNumber) {
-                                    Timber.w("⚠️ Roll number mismatch: authenticated=$rollNumber, profile=${profileData.rollNumber}")
-                                    errorMessage = "Roll number mismatch. Please contact administrator."
-                                    return@FaceIoAuthWebView
-                                }
-
-                                // Mark attendance
-                                markAttendanceWithSession(rollNumber)
-                            },
-                            onError = { error ->
-                                Timber.e("❌ WebView authentication error: $error")
-                                errorMessage = "Face authentication failed: $error"
-                            }
-                        )
-                    }
+                    )
                 }
             }
         }

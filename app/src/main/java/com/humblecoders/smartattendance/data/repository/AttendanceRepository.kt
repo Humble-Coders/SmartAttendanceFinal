@@ -8,6 +8,128 @@ class AttendanceRepository {
     private val firebaseRepository = FirebaseRepository()
 
     /**
+     * NEW: Comprehensive attendance validation before Face.io authentication
+     * This performs ALL checks except roll number verification
+     */
+    suspend fun validateComprehensiveAttendance(
+        rollNumber: String,
+        className: String,
+        session: ActiveSession,
+        deviceRoom: String,
+        isExtra: Boolean = false
+    ): Result<ComprehensiveValidationResult> {
+        return try {
+            val attendanceType = if (isExtra) "extra" else "regular"
+            Timber.d("🔍 Starting comprehensive $attendanceType attendance validation")
+            Timber.d("📋 Parameters: rollNumber=$rollNumber, className=$className, deviceRoom=$deviceRoom")
+            Timber.d("📚 Session: ${session.subject} in ${session.room} (${session.type})")
+
+            // 1. Validate session is active
+            if (!session.isActive) {
+                Timber.w("❌ Session is not active")
+                return Result.success(ComprehensiveValidationResult(
+                    isValid = false,
+                    reason = "Session is not currently active"
+                ))
+            }
+
+            // 2. Validate session type matches isExtra parameter
+            if (session.isExtra != isExtra) {
+                val expectedType = if (session.isExtra) "extra" else "regular"
+                val providedType = if (isExtra) "extra" else "regular"
+                Timber.w("❌ Session type mismatch: expected=$expectedType, provided=$providedType")
+                return Result.success(ComprehensiveValidationResult(
+                    isValid = false,
+                    reason = "Session type mismatch. Expected $expectedType session."
+                ))
+            }
+
+            // 3. Validate room matching (if device room is provided)
+            if (deviceRoom.isNotBlank()) {
+                val extractedRoom = extractRoomFromDeviceName(deviceRoom)
+                if (extractedRoom != null) {
+                    if (!session.room.equals(extractedRoom, ignoreCase = true)) {
+                        Timber.w("❌ Room mismatch: session=${session.room}, detected=$extractedRoom")
+                        return Result.success(ComprehensiveValidationResult(
+                            isValid = false,
+                            reason = "Room mismatch. You are in ${extractedRoom} but session is for ${session.room}"
+                        ))
+                    }
+                    Timber.d("✅ Room validation passed: ${session.room}")
+                } else {
+                    Timber.w("⚠️ Could not extract room from device name: $deviceRoom")
+                    // Don't fail validation if we can't extract room, just log warning
+                }
+            }
+
+            // 4. Check if attendance already marked for today
+            val alreadyMarkedResult = firebaseRepository.isAttendanceAlreadyMarked(
+                rollNumber = rollNumber,
+                subject = session.subject,
+                group = className,
+                type = session.type,
+                isExtra = isExtra
+            )
+
+            if (alreadyMarkedResult.isFailure) {
+                Timber.e("❌ Failed to check existing attendance: ${alreadyMarkedResult.exceptionOrNull()}")
+                return Result.success(ComprehensiveValidationResult(
+                    isValid = false,
+                    reason = "Failed to verify existing attendance records"
+                ))
+            }
+
+            val alreadyMarked = alreadyMarkedResult.getOrNull() ?: false
+            if (alreadyMarked) {
+                Timber.w("⚠️ $attendanceType attendance already marked for today")
+                return Result.success(ComprehensiveValidationResult(
+                    isValid = false,
+                    reason = "${attendanceType.capitalize()} attendance already marked for today",
+                    alreadyMarked = true
+                ))
+            }
+
+            // 5. Additional validation checks can be added here
+            // For example: Check if student is enrolled in the subject
+            // Check if attendance window is still open, etc.
+
+            // All validations passed
+            Timber.d("✅ Comprehensive validation passed for $attendanceType attendance")
+            Result.success(ComprehensiveValidationResult(
+                isValid = true,
+                reason = "All validations passed. Ready for Face.io authentication."
+            ))
+
+        } catch (e: Exception) {
+            Timber.e(e, "💥 Error during comprehensive validation")
+            Result.success(ComprehensiveValidationResult(
+                isValid = false,
+                reason = "Validation error: ${e.message}"
+            ))
+        }
+    }
+
+    /**
+     * Helper function to extract room name from device name
+     */
+    private fun extractRoomFromDeviceName(deviceName: String): String? {
+        return try {
+            if (deviceName.length >= 6) {
+                val last3 = deviceName.takeLast(3)
+                if (last3.all { it.isDigit() }) {
+                    val roomName = deviceName.dropLast(3)
+                    Timber.d("📡 Extracted room '$roomName' from device name '$deviceName'")
+                    return roomName
+                }
+            }
+            null
+        } catch (e: Exception) {
+            Timber.e(e, "📡 Error extracting room from device name: $deviceName")
+            null
+        }
+    }
+
+    /**
      * Check if there's an active session for the student's class
      */
     suspend fun checkActiveSession(className: String): Result<SessionCheckResult> {
@@ -33,7 +155,6 @@ class AttendanceRepository {
     /**
      * Mark attendance with the new structure
      */
-    // In AttendanceRepository.kt - Replace the existing method
     suspend fun markAttendance(
         rollNumber: String,
         studentName: String,
@@ -77,6 +198,7 @@ class AttendanceRepository {
             Result.failure(Exception("Unexpected error: ${e.message}"))
         }
     }
+
     /**
      * Get attendance history for a student
      */
@@ -169,9 +291,9 @@ class AttendanceRepository {
     }
 
     /**
+     * DEPRECATED: Use validateComprehensiveAttendance instead
      * Validate attendance eligibility (check for duplicates)
      */
-    // In AttendanceRepository.kt - Replace the existing method
     suspend fun validateAttendanceEligibility(
         rollNumber: String,
         subject: String,
@@ -224,9 +346,16 @@ class AttendanceRepository {
     }
 }
 
-// Data class for attendance eligibility
+// Data class for attendance eligibility (kept for backward compatibility)
 data class AttendanceEligibility(
     val isEligible: Boolean,
+    val reason: String,
+    val alreadyMarked: Boolean = false
+)
+
+// NEW: Data class for comprehensive validation result
+data class ComprehensiveValidationResult(
+    val isValid: Boolean,
     val reason: String,
     val alreadyMarked: Boolean = false
 )

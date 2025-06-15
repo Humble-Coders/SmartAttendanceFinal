@@ -45,10 +45,134 @@ class AttendanceViewModel(
     val isCheckingSession: StateFlow<Boolean> = _isCheckingSession.asStateFlow()
 
     /**
-     * Check if there's an active session for the student's class
+     * NEW: Validate attendance before Face.io authentication
+     * This performs all checks except roll number verification
      */
+    fun validateAttendanceBeforeAuth(
+        rollNumber: String,
+        deviceRoom: String = "",
+        isExtra: Boolean = false,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val attendanceType = if (isExtra) "extra" else "regular"
+                Timber.d("🔍 Starting pre-authentication validation for $attendanceType attendance")
 
+                // Get student profile data
+                val profileData = profileRepository.profileData.first()
+                val className = profileData.className
 
+                if (className.isBlank()) {
+                    onError("No class information available in profile")
+                    return@launch
+                }
+
+                // Get current session data
+                val session = _currentSession.value
+                if (session == null) {
+                    onError("No active session found")
+                    return@launch
+                }
+
+                Timber.d("👤 Student info: rollNumber=$rollNumber, class=$className")
+                Timber.d("📚 Session info: subject=${session.subject}, room=${session.room}, type=${session.type}, isExtra=${session.isExtra}")
+
+                // Call repository method for comprehensive validation
+                val result = attendanceRepository.validateComprehensiveAttendance(
+                    rollNumber = rollNumber,
+                    className = className,
+                    session = session,
+                    deviceRoom = deviceRoom,
+                    isExtra = isExtra
+                )
+
+                if (result.isSuccess) {
+                    val validationResult = result.getOrNull()!!
+                    if (validationResult.isValid) {
+                        Timber.i("✅ Pre-authentication validation successful")
+                        onSuccess()
+                    } else {
+                        Timber.w("⚠️ Pre-authentication validation failed: ${validationResult.reason}")
+                        onError(validationResult.reason)
+                    }
+                } else {
+                    val error = result.exceptionOrNull()?.message ?: "Validation failed"
+                    Timber.e("❌ Pre-authentication validation error: $error")
+                    onError(error)
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Unexpected error during pre-authentication validation")
+                onError("Validation error: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * NEW: Mark attendance after Face.io authentication
+     * This only performs final attendance marking without validation checks
+     */
+    fun markAttendanceAfterAuth(
+        rollNumber: String,
+        deviceRoom: String = "",
+        isExtra: Boolean = false,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isLoading.value = true
+
+            try {
+                val attendanceType = if (isExtra) "extra" else "regular"
+                Timber.d("🎯 Final attendance marking after Face.io auth")
+
+                // Get student profile data
+                val profileData = profileRepository.profileData.first()
+                val studentName = profileData.name.ifBlank { "Unknown Student" }
+                val className = profileData.className
+
+                // Get current session data
+                val session = _currentSession.value!!
+
+                Timber.d("📡 Calling repository to mark $attendanceType attendance...")
+                val result = attendanceRepository.markAttendance(
+                    rollNumber = rollNumber,
+                    studentName = studentName,
+                    subject = session.subject,
+                    group = className,
+                    type = session.type,
+                    deviceRoom = deviceRoom,
+                    isExtra = isExtra
+                )
+
+                if (result.isSuccess) {
+                    val response = result.getOrNull()!!
+                    Timber.i("🎉 $attendanceType attendance marked successfully: ${response.attendanceId}")
+
+                    // Refresh attendance data
+                    refreshAttendanceData(rollNumber)
+                    onSuccess()
+                } else {
+                    val error = result.exceptionOrNull()?.message ?: "Unknown error"
+                    Timber.e("❌ $attendanceType attendance marking failed: $error")
+                    onError(error)
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Unexpected error during final attendance marking")
+                onError("Unexpected error: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * DEPRECATED: Old method for backward compatibility
+     * Use validateAttendanceBeforeAuth + markAttendanceAfterAuth instead
+     */
     fun markAttendance(
         rollNumber: String,
         deviceRoom: String = "",
@@ -165,11 +289,6 @@ class AttendanceViewModel(
         Timber.d("🏢 Room matching: session.room='${session.room}', detectedRoom='$detectedRoom', extractedRoom='$roomName', matches=$matches")
         return matches
     }
-    /**
-     * Mark attendance with the new structure (updated to use session data)
-     */
-    // In AttendanceViewModel.kt - Replace the existing method
-
 
     /**
      * Check if there's an active session for the student's class (overloaded for UI)
@@ -222,14 +341,11 @@ class AttendanceViewModel(
             }
         }
     }
+
     fun getCurrentSessionInfo(): Triple<String?, String?, String?> {
         val session = _currentSession.value
         return Triple(session?.subject, session?.room, session?.type)
     }
-
-    /**
-     * Check if room matches the detected device room
-     */
 
     /**
      * Load attendance history for current student
