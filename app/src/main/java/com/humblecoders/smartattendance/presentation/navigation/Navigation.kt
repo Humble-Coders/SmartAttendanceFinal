@@ -126,7 +126,7 @@ fun AppNavigation(
             )
         }
 
-        // Attendance Success Screen
+        // Attendance Success Screen - UPDATED: Now receives BleViewModel
         composable(
             route = Screen.AttendanceSuccess.route,
             arguments = listOf(
@@ -160,7 +160,8 @@ fun AppNavigation(
                         // Clear success screen and any remaining screens from back stack
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
-                }
+                },
+                attendanceViewModel = attendanceViewModel
             )
         }
     }

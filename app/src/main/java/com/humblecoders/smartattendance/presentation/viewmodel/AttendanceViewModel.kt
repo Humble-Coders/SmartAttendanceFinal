@@ -24,6 +24,10 @@ class AttendanceViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    // NEW: Track attendance completion status
+    private val _isAttendanceCompletedToday = MutableStateFlow(false)
+    val isAttendanceCompletedToday: StateFlow<Boolean> = _isAttendanceCompletedToday.asStateFlow()
+
     private val _attendanceHistory = MutableStateFlow<List<AttendanceRecord>>(emptyList())
     val attendanceHistory: StateFlow<List<AttendanceRecord>> = _attendanceHistory.asStateFlow()
 
@@ -403,6 +407,7 @@ class AttendanceViewModel(
         _attendanceStats.value = null
         _currentSession.value = null
         _isSessionActive.value = false
+        _isAttendanceCompletedToday.value = false // ADD THIS LINE
         Timber.d("🧹 Cleared attendance data")
     }
 
@@ -500,5 +505,21 @@ class AttendanceViewModel(
                 _isCheckingSession.value = false
             }
         }
+    }
+
+    /**
+     * Mark attendance as completed for today's session
+     */
+    fun markAttendanceCompleted() {
+        _isAttendanceCompletedToday.value = true
+        Timber.d("✅ Attendance marked as completed for today")
+    }
+
+    /**
+     * Reset attendance completion status (for new sessions)
+     */
+    fun resetAttendanceStatus() {
+        _isAttendanceCompletedToday.value = false
+        Timber.d("🔄 Attendance completion status reset")
     }
 }

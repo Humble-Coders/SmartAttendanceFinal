@@ -26,18 +26,7 @@ data class ActiveSession(
     )
 }
 
-// Alternative approach: Keep default values but add explicit constructor
-data class ActiveSessionAlternative(
-    @PropertyName("isActive") val isActive: Boolean = false,
-    @PropertyName("subject") val subject: String = "",
-    @PropertyName("room") val room: String = "",
-    @PropertyName("type") val type: String = "", // "lect", "lab", "tut"
-    @PropertyName("sessionId") val sessionId: String = "",
-    @PropertyName("date") val date: String = "" // YYYY-MM-DD format
-) {
-    // Explicit no-argument constructor
-    constructor() : this(false, "", "", "", "", "")
-}
+
 
 // Keep the rest of your models unchanged
 data class AttendanceRecord(

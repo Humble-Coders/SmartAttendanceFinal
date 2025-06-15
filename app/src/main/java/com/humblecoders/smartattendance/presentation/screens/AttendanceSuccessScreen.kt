@@ -16,6 +16,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewModel
+import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.time.LocalDateTime
@@ -29,7 +31,8 @@ fun AttendanceSuccessScreen(
     type: String,
     deviceRoom: String = "",
     onBackToHome: () -> Unit,
-    autoNavigateAfterMs: Long = 3000L
+    autoNavigateAfterMs: Long = 3000L,
+    attendanceViewModel: AttendanceViewModel
 ) {
     // Get current date and time
     val currentDateTime = LocalDateTime.now()
@@ -38,6 +41,13 @@ fun AttendanceSuccessScreen(
 
     val currentTime = currentDateTime.format(timeFormatter)
     val currentDate = currentDateTime.format(dateFormatter)
+
+    // NEW: Stop BLE scanning when success screen loads
+    // REPLACE the existing LaunchedEffect(Unit) block with this:
+    LaunchedEffect(Unit) {
+        // NEW: Mark attendance as completed in ViewModel
+        attendanceViewModel.markAttendanceCompleted()
+    }
 
     // Auto-navigate back to home after specified time
     LaunchedEffect(Unit) {
@@ -106,6 +116,36 @@ fun AttendanceSuccessScreen(
                         textAlign = TextAlign.Center,
                         lineHeight = 22.sp
                     )
+
+                    // NEW: BLE Scanning Status Info
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF007AFF).copy(alpha = 0.1f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "📡",
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "BLE scanning stopped automatically",
+                                fontSize = 14.sp,
+                                color = Color(0xFF007AFF),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
 
                     // Details Card
                     Card(

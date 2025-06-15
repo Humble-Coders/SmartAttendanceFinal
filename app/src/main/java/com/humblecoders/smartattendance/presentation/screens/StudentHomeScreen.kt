@@ -28,6 +28,7 @@ import com.humblecoders.smartattendance.presentation.components.triggerClassroom
 import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewModel
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,6 +55,8 @@ fun StudentHomeScreen(
     var currentRoom by remember { mutableStateOf("") }
     var currentType by remember { mutableStateOf("") }
     var isCheckingSession by remember { mutableStateOf(false) }
+    var hasCheckedInitialSession by remember { mutableStateOf(false) } // Track initial check
+    var isAttendanceMarked by remember { mutableStateOf(false) } // NEW: Track if attendance is marked for current session
 
     // Overlay state management
     var overlayState by remember { mutableStateOf(OverlayState.NONE) }
@@ -61,49 +64,80 @@ fun StudentHomeScreen(
     // Collect ViewModel state for session checking
     val isCheckingSessionVM by attendanceViewModel.isCheckingSession.collectAsState()
 
+    val isAttendanceCompletedToday by attendanceViewModel.isAttendanceCompletedToday.collectAsState()
+
     // Override local checking state with ViewModel state
     LaunchedEffect(isCheckingSessionVM) {
         isCheckingSession = isCheckingSessionVM
     }
 
-    // Handle Bluetooth permissions
+    // Handle Bluetooth permissions (but don't auto-start scanning)
     BluetoothPermissionHandler(
         onPermissionsGranted = {
-            bleViewModel.restartScanning()
+            Timber.d("📡 Bluetooth permissions granted, but waiting for active session to start scanning")
+            // Don't auto-start scanning here anymore
         }
     )
 
-    // Check active session when profile data is available
+    // UPDATED: Check active session when profile data is available (only once initially)
     LaunchedEffect(profileData.className) {
-        if (profileData.className.isNotBlank()) {
+        if (profileData.className.isNotBlank() && !hasCheckedInitialSession) {
+            Timber.d("🔍 Performing initial session check for class: ${profileData.className}")
+            hasCheckedInitialSession = true
+
             attendanceViewModel.checkActiveSession { result ->
                 isSessionActive = result.isActive
                 if (result.session != null) {
                     currentSubject = result.session!!.subject
                     currentRoom = result.session!!.room
                     currentType = result.session!!.type
+
+                    // NEW: Reset attendance marked flag when session changes
+                    isAttendanceMarked = false
+
+                    Timber.d("📋 Initial session check result: isActive=$isSessionActive")
+                    if (isSessionActive) {
+                        Timber.d("✅ Active session found: $currentSubject in $currentRoom")
+                    } else {
+                        Timber.d("⚪ No active session found")
+                    }
                 } else {
                     currentSubject = ""
                     currentRoom = ""
                     currentType = ""
+                    isAttendanceMarked = false
+                    Timber.d("⚪ No session data available")
                 }
             }
         }
     }
 
-    // Auto-start BLE scanning if session is active
-    LaunchedEffect(isSessionActive, currentRoom) {
-        if (isSessionActive && currentRoom.isNotBlank()) {
-            Timber.d("Active session detected for room: $currentRoom")
+    // UPDATED: Only start BLE scanning when session becomes active
+    // REPLACE the existing LaunchedEffect(isSessionActive, currentRoom, isAttendanceMarked) with:
+    LaunchedEffect(isSessionActive, currentRoom, isAttendanceCompletedToday) {
+        if (isSessionActive && currentRoom.isNotBlank() && !isAttendanceCompletedToday) {
+            Timber.d("🚀 Active session detected and attendance not completed, starting BLE scanning for room: $currentRoom")
+
             // Show room detection starting overlay
             triggerRoomDetectionSequence(
                 onStateChange = { overlayState = it },
                 roomName = currentRoom
             )
+
             // Start BLE scanning for specific room
             bleViewModel.startScanningForRoom(currentRoom)
+        } else if (!isSessionActive || isAttendanceCompletedToday) {
+            // Stop BLE scanning if session becomes inactive OR attendance is completed
+            val reason = when {
+                !isSessionActive -> "No active session"
+                isAttendanceCompletedToday -> "Attendance completed today"
+                else -> "Unknown reason"
+            }
+            Timber.d("⏹️ Stopping BLE scanning: $reason")
+            bleViewModel.stopScanning()
         }
     }
+
 
     // Handle device detection and validation
     LaunchedEffect(deviceFound, detectedDeviceRoom, detectedSubjectCode) {
@@ -386,21 +420,43 @@ fun StudentHomeScreen(
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Refresh Button
+                // Check Session Button - Renamed and focused on session checking only
                 Button(
                     onClick = {
                         if (profileData.className.isNotBlank()) {
+                            Timber.d("🔍 Check session triggered")
+                            // Reset the initial check flag to allow re-checking
+                            hasCheckedInitialSession = false
+                            attendanceViewModel.resetAttendanceStatus()
+
+
                             attendanceViewModel.checkActiveSession { result ->
                                 isSessionActive = result.isActive
                                 if (result.session != null) {
                                     currentSubject = result.session!!.subject
                                     currentRoom = result.session!!.room
                                     currentType = result.session!!.type
+
+                                    // NEW: Reset attendance marked flag when checking for new session
+                                    isAttendanceMarked = false
+
+                                    if (result.isActive) {
+                                        Timber.d("✅ Session check found active session: $currentSubject in $currentRoom")
+                                    } else {
+                                        Timber.d("⚪ Session check found no active session")
+                                        // Stop scanning if session is no longer active
+                                        bleViewModel.stopScanning()
+                                    }
                                 } else {
                                     currentSubject = ""
                                     currentRoom = ""
                                     currentType = ""
+                                    isAttendanceMarked = false
+                                    // Stop scanning if no session data
+                                    bleViewModel.stopScanning()
                                 }
+                                // Mark as checked again
+                                hasCheckedInitialSession = true
                             }
                         }
                     },
@@ -419,31 +475,59 @@ fun StudentHomeScreen(
                         )
                     } else {
                         Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Check Session",
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Refresh", fontWeight = FontWeight.Medium)
+                    Text("Check Session", fontWeight = FontWeight.Medium)
                 }
 
-                // Manual Detection Button
+                // Restart Scan Button - NEW: Restarts BLE scanning only if session is active AND attendance not marked
                 OutlinedButton(
-                    onClick = { onAttendanceClick() },
+                    onClick = {
+                        if (isSessionActive && currentRoom.isNotBlank() && !isAttendanceMarked) {
+                            Timber.d("🔄 Restart BLE scan triggered for room: $currentRoom")
+                            // Stop current scanning
+                            bleViewModel.stopScanning()
+                            // Reset device detection state
+                            bleViewModel.resetDeviceFound()
+                            // Start scanning again after a short delay
+                            kotlinx.coroutines.MainScope().launch {
+                                kotlinx.coroutines.delay(500)
+                                bleViewModel.startScanningForRoom(currentRoom)
+                                Timber.d("📡 BLE scanning restarted for room: $currentRoom")
+                            }
+                        } else {
+                            val reason = when {
+                                !isSessionActive -> "no active session"
+                                currentRoom.isBlank() -> "no room available"
+                                isAttendanceMarked -> "attendance already marked"
+                                else -> "unknown reason"
+                            }
+                            Timber.w("⚠️ Cannot restart scan - $reason")
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     colors = buttonColors(
-                        contentColor = Color(0xFFFF9500)
+                        contentColor = if (isSessionActive && !isAttendanceMarked) Color(0xFF34C759) else Color(0xFF8E8E93)
+                    ),
+                    enabled = isSessionActive && currentRoom.isNotBlank() && !isAttendanceCompletedToday                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Restart Scan",
+                        modifier = Modifier.size(16.dp)
                     )
-                ) {
-                    Text("Manual", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Restart Scan", fontWeight = FontWeight.Medium, fontSize = 14.sp)
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Current Activity Card (Enhanced with subject code info)
+            // UPDATED: Current Activity Card - Shows BLE status only when session is active
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -479,27 +563,27 @@ fun StudentHomeScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Bluetooth Detection Status
+                    // Session Status
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "📶",
+                            text = "📋",
                             fontSize = 16.sp
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = when (bleState) {
-                                BleState.SCANNING -> "Bluetooth Detection: Active"
-                                BleState.DEVICE_FOUND -> "Device Found: ${bleViewModel.getDetectedRoomName() ?: "Unknown"}"
-                                BleState.IDLE -> "Bluetooth Detection: Idle"
-                                else -> "Bluetooth Detection: ${bleState.name}"
+                            text = when {
+                                isCheckingSession -> "Session Check: In Progress..."
+                                isSessionActive -> "Session Status: Active"
+                                else -> "Session Status: No Active Session"
                             },
                             fontSize = 14.sp,
-                            color = Color(0xFF8E8E93)
+                            color = if (isSessionActive) Color(0xFF34C759) else Color(0xFF8E8E93),
+                            fontWeight = if (isSessionActive) FontWeight.Medium else FontWeight.Normal
                         )
 
-                        if (bleState == BleState.SCANNING) {
+                        if (isCheckingSession) {
                             Spacer(modifier = Modifier.width(8.dp))
                             CircularProgressIndicator(
                                 modifier = Modifier.size(12.dp),
@@ -509,49 +593,138 @@ fun StudentHomeScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    // Only show BLE status if session is active
+                    if (isSessionActive) {
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    // Room Detection Status
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🔍",
-                            fontSize = 16.sp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = when {
-                                deviceFound -> "Room Detection: Found (${bleViewModel.getDetectedRoomName()})"
-                                bleState == BleState.SCANNING -> "Room Detection: Searching..."
-                                isSessionActive -> "Room Detection: Waiting for proximity"
-                                else -> "Room Detection: Inactive"
-                            },
-                            fontSize = 14.sp,
-                            color = Color(0xFF8E8E93)
-                        )
-                    }
+                        // Show attendance status if marked
+                        if (isAttendanceCompletedToday) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "✅",
+                                    fontSize = 16.sp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Attendance Status: Already Marked",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF34C759),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
 
-                    // Subject Code Detection Status (NEW)
-                    if (detectedSubjectCode != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "📡",
+                                    fontSize = 16.sp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "BLE Scanning: Stopped (Attendance Complete)",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF8E8E93),
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                )
+                            }
+                        } else {
+                            // Bluetooth Detection Status
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "📶",
+                                    fontSize = 16.sp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = when (bleState) {
+                                        BleState.SCANNING -> "Bluetooth Detection: Active"
+                                        BleState.DEVICE_FOUND -> "Device Found: ${bleViewModel.getDetectedRoomName() ?: "Unknown"}"
+                                        BleState.IDLE -> "Bluetooth Detection: Ready"
+                                        else -> "Bluetooth Detection: ${bleState.name}"
+                                    },
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF8E8E93)
+                                )
+
+                                if (bleState == BleState.SCANNING) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        color = Color(0xFF007AFF),
+                                        strokeWidth = 1.5.dp
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Room Detection Status
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🔍",
+                                    fontSize = 16.sp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = when {
+                                        deviceFound -> "Room Detection: Found (${bleViewModel.getDetectedRoomName()})"
+                                        bleState == BleState.SCANNING -> "Room Detection: Searching..."
+                                        else -> "Room Detection: Waiting for proximity"
+                                    },
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF8E8E93)
+                                )
+                            }
+
+                            // Subject Code Detection Status (only if detected)
+                            if (detectedSubjectCode != null) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "📚",
+                                        fontSize = 16.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Subject Detected: $detectedSubjectCode",
+                                        fontSize = 14.sp,
+                                        color = if (detectedSubjectCode.equals(currentSubject, ignoreCase = true)) {
+                                            Color(0xFF34C759) // Green if matches
+                                        } else {
+                                            Color(0xFFFF9500) // Orange if different
+                                        },
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Show message when no session is active
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "📚",
+                                text = "💤",
                                 fontSize = 16.sp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Subject Detected: $detectedSubjectCode",
+                                text = "Waiting for active session to start BLE scanning",
                                 fontSize = 14.sp,
-                                color = if (detectedSubjectCode.equals(currentSubject, ignoreCase = true)) {
-                                    Color(0xFF34C759) // Green if matches
-                                } else {
-                                    Color(0xFFFF9500) // Orange if different
-                                },
-                                fontWeight = FontWeight.Medium
+                                color = Color(0xFF8E8E93),
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                             )
                         }
                     }
@@ -663,4 +836,32 @@ fun StudentHomeScreen(
             bleViewModel.resetAndContinueScanning()
         }
     )
+
+    // NEW: Listen for successful attendance marking from navigation
+    LaunchedEffect(Unit) {
+        // This will be triggered when returning from successful attendance
+        // We need to check if we just returned from AttendanceSuccessScreen
+        // For now, we'll use a simple approach - check attendance history changes
+    }
+
+    // NEW: Monitor attendance history to detect when new attendance is marked
+    LaunchedEffect(attendanceHistory) {
+        if (isSessionActive && currentSubject.isNotBlank() && attendanceHistory.isNotEmpty()) {
+            // Check if there's a recent attendance record for current session
+            val today = java.time.LocalDate.now().toString()
+            val todayAttendance = attendanceHistory.filter { record ->
+                record.date == today &&
+                        record.subject == currentSubject &&
+                        record.type == currentType &&
+                        record.present
+            }
+
+            if (todayAttendance.isNotEmpty() && !isAttendanceMarked) {
+                Timber.d("🎉 Attendance detected in history - marking as completed")
+                isAttendanceMarked = true
+                // Stop BLE scanning since attendance is marked
+                bleViewModel.stopScanning()
+            }
+        }
+    }
 }

@@ -16,14 +16,7 @@ data class AttendanceSuccessData(
     /**
      * Get formatted type for display
      */
-    fun getFormattedType(): String {
-        return when (type.lowercase()) {
-            "lect" -> "Lecture"
-            "lab" -> "Lab"
-            "tut" -> "Tutorial"
-            else -> type.uppercase()
-        }
-    }
+
 
     /**
      * Get formatted device room (without digits for display)
@@ -44,7 +37,5 @@ data class AttendanceSuccessData(
     /**
      * Check if device room matches session room
      */
-    fun isRoomMatching(): Boolean {
-        return room.equals(getFormattedDeviceRoom(), ignoreCase = true)
-    }
+
 }
