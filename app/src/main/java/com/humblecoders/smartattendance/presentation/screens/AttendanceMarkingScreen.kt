@@ -75,6 +75,9 @@ fun AttendanceMarkingScreen(
 // In AttendanceMarkingScreen.kt - Replace the function inside the composable
 
     // Function to mark attendance with all required data
+// REPLACE in AttendanceMarkingScreen.kt
+// Replace the markAttendanceWithSession function:
+
     fun markAttendanceWithSession(rollNumber: String) {
         if (isProcessingAttendance) {
             Timber.w("⚠️ Attendance already being processed, ignoring duplicate request")
@@ -95,7 +98,6 @@ fun AttendanceMarkingScreen(
         }
 
         isProcessingAttendance = true
-        // Use the isExtra field from the session data
         val isExtra = session.isExtra
         val attendanceType = if (isExtra) "extra" else "regular"
 
@@ -107,11 +109,11 @@ fun AttendanceMarkingScreen(
         attendanceViewModel.markAttendance(
             rollNumber = rollNumber,
             deviceRoom = detectedDeviceRoom ?: "",
-            isExtra = isExtra, // Use session's isExtra field
+            isExtra = isExtra,
             onSuccess = {
                 Timber.i("🎉 $attendanceType attendance marked successfully!")
 
-                // Create success data with all information
+                // FIX: Create success data with proper string encoding for navigation
                 val successData = AttendanceSuccessData(
                     rollNumber = rollNumber,
                     studentName = profileData.name,
@@ -125,7 +127,7 @@ fun AttendanceMarkingScreen(
                 Timber.d("✅ Created success data: $successData")
                 isProcessingAttendance = false
 
-                // Navigate to success screen
+                // FIX: Navigate to success screen with proper route encoding
                 onNavigateToSuccess(successData)
             },
             onError = { error ->

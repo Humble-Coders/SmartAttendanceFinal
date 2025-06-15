@@ -47,30 +47,8 @@ class AttendanceViewModel(
     /**
      * Check if there's an active session for the student's class
      */
-    fun isRoomMatching(detectedRoom: String): Boolean {
-        val session = _currentSession.value
-        if (session == null) return false
 
-        // Remove the 3 digits from detected room for comparison
-        val roomName = if (detectedRoom.length >= 3) {
-            val suffix = detectedRoom.takeLast(3)
-            if (suffix.all { it.isDigit() }) {
-                detectedRoom.dropLast(3)
-            } else {
-                detectedRoom
-            }
-        } else {
-            detectedRoom
-        }
 
-        val matches = session.room.equals(roomName, ignoreCase = true)
-        Timber.d("🏢 Room matching: session.room='${session.room}', detectedRoom='$detectedRoom', extractedRoom='$roomName', matches=$matches")
-        return matches
-    }
-    /**
-     * Mark attendance with the new structure (updated to use session data)
-     */
-    // In AttendanceViewModel.kt - Replace the existing method
     fun markAttendance(
         rollNumber: String,
         deviceRoom: String = "",
@@ -132,16 +110,16 @@ class AttendanceViewModel(
 
                 Timber.d("✅ Eligibility check passed, proceeding to mark $attendanceType attendance")
 
-                // Mark attendance with session data
+                // Mark attendance with session data - ENSURE ALL PARAMETERS ARE PASSED CORRECTLY
                 Timber.d("📡 Calling repository to mark $attendanceType attendance...")
                 val result = attendanceRepository.markAttendance(
                     rollNumber = rollNumber,
                     studentName = studentName,
-                    subject = session.subject,
-                    group = className,
-                    type = session.type,
-                    deviceRoom = deviceRoom,
-                    isExtra = isExtra
+                    subject = session.subject,      // FROM SESSION
+                    group = className,              // FROM PROFILE
+                    type = session.type,            // FROM SESSION
+                    deviceRoom = deviceRoom,        // FROM BLE
+                    isExtra = isExtra              // FROM PARAMETER
                 )
 
                 if (result.isSuccess) {
@@ -150,7 +128,6 @@ class AttendanceViewModel(
 
                     // Refresh attendance data
                     refreshAttendanceData(rollNumber)
-
                     onSuccess()
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Unknown error"
@@ -167,6 +144,32 @@ class AttendanceViewModel(
             }
         }
     }
+
+    fun isRoomMatching(detectedRoom: String): Boolean {
+        val session = _currentSession.value
+        if (session == null) return false
+
+        // Remove the 3 digits from detected room for comparison
+        val roomName = if (detectedRoom.length >= 3) {
+            val suffix = detectedRoom.takeLast(3)
+            if (suffix.all { it.isDigit() }) {
+                detectedRoom.dropLast(3)
+            } else {
+                detectedRoom
+            }
+        } else {
+            detectedRoom
+        }
+
+        val matches = session.room.equals(roomName, ignoreCase = true)
+        Timber.d("🏢 Room matching: session.room='${session.room}', detectedRoom='$detectedRoom', extractedRoom='$roomName', matches=$matches")
+        return matches
+    }
+    /**
+     * Mark attendance with the new structure (updated to use session data)
+     */
+    // In AttendanceViewModel.kt - Replace the existing method
+
 
     /**
      * Check if there's an active session for the student's class (overloaded for UI)

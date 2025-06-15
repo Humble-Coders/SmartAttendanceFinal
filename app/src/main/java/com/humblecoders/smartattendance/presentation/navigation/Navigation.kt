@@ -130,20 +130,57 @@ fun AppNavigation(
         composable(
             route = Screen.AttendanceSuccess.route,
             arguments = listOf(
-                navArgument("rollNumber") { type = NavType.StringType },
-                navArgument("subject") { type = NavType.StringType },
-                navArgument("room") { type = NavType.StringType },
-                navArgument("type") { type = NavType.StringType },
-                navArgument("deviceRoom") { type = NavType.StringType },
-                navArgument("attendanceId") { type = NavType.StringType }
+                navArgument("rollNumber") {
+                    type = NavType.StringType
+                    defaultValue = "unknown"
+                },
+                navArgument("subject") {
+                    type = NavType.StringType
+                    defaultValue = "unknown"
+                },
+                navArgument("room") {
+                    type = NavType.StringType
+                    defaultValue = "unknown"
+                },
+                navArgument("type") {
+                    type = NavType.StringType
+                    defaultValue = "unknown"
+                },
+                navArgument("deviceRoom") {
+                    type = NavType.StringType
+                    defaultValue = "unknown"
+                },
+                navArgument("attendanceId") {
+                    type = NavType.StringType
+                    defaultValue = "unknown"
+                }
             )
         ) { backStackEntry ->
-            val rollNumber = backStackEntry.arguments?.getString("rollNumber") ?: ""
-            val subject = backStackEntry.arguments?.getString("subject") ?: ""
-            val room = backStackEntry.arguments?.getString("room") ?: ""
-            val type = backStackEntry.arguments?.getString("type") ?: ""
-            val deviceRoom = backStackEntry.arguments?.getString("deviceRoom") ?: ""
-            val attendanceId = backStackEntry.arguments?.getString("attendanceId") ?: ""
+            // FIX: URL decode the parameters
+            val rollNumber = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("rollNumber") ?: "unknown",
+                "UTF-8"
+            )
+            val subject = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("subject") ?: "unknown",
+                "UTF-8"
+            )
+            val room = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("room") ?: "unknown",
+                "UTF-8"
+            )
+            val type = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("type") ?: "unknown",
+                "UTF-8"
+            )
+            val deviceRoom = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("deviceRoom") ?: "unknown",
+                "UTF-8"
+            )
+            val attendanceId = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("attendanceId") ?: "unknown",
+                "UTF-8"
+            )
 
             Timber.d("🧭 Navigating to Success Screen")
             Timber.d("📋 Success data - Roll: $rollNumber, Subject: $subject, Room: $room")
@@ -157,7 +194,6 @@ fun AppNavigation(
                 onBackToHome = {
                     Timber.d("🧭 Navigating back to Home from Success")
                     navController.navigate(Screen.Home.route) {
-                        // Clear success screen and any remaining screens from back stack
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 },
@@ -165,6 +201,8 @@ fun AppNavigation(
             )
         }
     }
+
+
 }
 
 sealed class Screen(val route: String) {
@@ -183,7 +221,19 @@ sealed class Screen(val route: String) {
             deviceRoom: String,
             attendanceId: String
         ): String {
-            return "attendance_success/$rollNumber/$subject/$room/$type/$deviceRoom/$attendanceId"
+            // FIX: URL encode special characters and handle empty values
+            val encodedRollNumber = java.net.URLEncoder.encode(rollNumber.ifBlank { "unknown" }, "UTF-8")
+            val encodedSubject = java.net.URLEncoder.encode(subject.ifBlank { "unknown" }, "UTF-8")
+            val encodedRoom = java.net.URLEncoder.encode(room.ifBlank { "unknown" }, "UTF-8")
+            val encodedType = java.net.URLEncoder.encode(type.ifBlank { "unknown" }, "UTF-8")
+            val encodedDeviceRoom = java.net.URLEncoder.encode(deviceRoom.ifBlank { "unknown" }, "UTF-8")
+            val encodedAttendanceId = java.net.URLEncoder.encode(attendanceId.ifBlank { "unknown" }, "UTF-8")
+
+            return "attendance_success/$encodedRollNumber/$encodedSubject/$encodedRoom/$encodedType/$encodedDeviceRoom/$encodedAttendanceId"
         }
     }
+
 }
+
+
+

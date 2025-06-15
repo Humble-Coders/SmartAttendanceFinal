@@ -180,25 +180,25 @@ class FirebaseRepository {
                 ))
             }
 
-            // Create attendance record with isExtra field
+            // Create attendance record with ALL required fields in correct format
             val currentTime = Timestamp.now()
-            val attendanceRecord = AttendanceRecord(
-                date = today,
-                rollNumber = rollNumber,
-                subject = subject,
-                group = group,
-                type = type,
-                present = true,
-                timestamp = currentTime,
-                deviceRoom = deviceRoom,
-                isExtra = isExtra
+            val attendanceData = mapOf(
+                "date" to today,
+                "rollNumber" to rollNumber,
+                "subject" to subject,
+                "group" to group,
+                "type" to type,
+                "present" to true,
+                "timestamp" to currentTime,
+                "deviceRoom" to deviceRoom,
+                "isExtra" to isExtra
             )
 
-            Timber.d("📝 Created attendance record: $attendanceRecord")
+            Timber.d("📝 Created attendance data: $attendanceData")
 
             // Save to current month's collection with auto-generated ID
             val attendanceCollection = getCurrentAttendanceCollection()
-            val documentRef = attendanceCollection.add(attendanceRecord).await()
+            val documentRef = attendanceCollection.add(attendanceData).await()
             val attendanceId = documentRef.id
 
             val attendanceType = if (isExtra) "extra" else "regular"
