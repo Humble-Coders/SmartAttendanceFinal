@@ -21,6 +21,8 @@ import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import com.humblecoders.smartattendance.data.model.AttendanceSuccessData
 import timber.log.Timber
 
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AttendanceMarkingScreen(
@@ -43,12 +45,25 @@ fun AttendanceMarkingScreen(
     var isValidatingAttendance by remember { mutableStateOf(false) }
     var attendanceValidated by remember { mutableStateOf(false) }
 
+
+    fun stopScanningAndNavigateBack() {
+        Timber.d("🛑 Stopping BLE scanning due to navigation back from attendance screen")
+        bleViewModel.stopScanning()
+        bleViewModel.resetDeviceFound()
+        onNavigateBack()
+    }
+
     // Screen lifecycle logging
     LaunchedEffect(Unit) {
         Timber.d("🎬 AttendanceMarkingScreen: Screen launched")
         Timber.d("📋 Profile: ${profileData.name}, Roll: ${profileData.rollNumber}, Class: ${profileData.className}")
         Timber.d("📚 Session: ${currentSession?.subject}, Room: ${currentSession?.room}")
         Timber.d("📡 BLE Device Room: $detectedDeviceRoom")
+
+        Timber.d("🎬 AttendanceMarkingScreen: Clearing any overlay states")
+        // Stop BLE scanning and reset detection state to prevent overlays
+        bleViewModel.stopScanning()
+        bleViewModel.resetDeviceFound()
     }
 
     DisposableEffect(Unit) {
@@ -58,6 +73,8 @@ fun AttendanceMarkingScreen(
     }
 
     // NEW: Function to perform all attendance checks before Face.io auth
+// REPLACE the performAttendanceValidation function with this:
+
     fun performAttendanceValidation() {
         val session = currentSession
         if (session == null) {
@@ -94,10 +111,14 @@ fun AttendanceMarkingScreen(
                 Timber.e("❌ $attendanceType attendance validation failed: $error")
                 errorMessage = error
                 isValidatingAttendance = false
+            },
+            onStopScanning = {
+                // Stop BLE scanning when validation fails
+                Timber.d("🛑 Stopping BLE scanning due to validation failure")
+                bleViewModel.stopScanning()
             }
         )
     }
-
     // Handle camera permission
     CameraPermissionHandler(
         onPermissionGranted = {
@@ -178,6 +199,10 @@ fun AttendanceMarkingScreen(
                     IconButton(
                         onClick = {
                             Timber.d("🔙 User clicked back button")
+                            // Disable auto-scanning and stop current scanning
+                            attendanceViewModel.disableAutoScan()
+                            bleViewModel.stopScanning()
+                            bleViewModel.resetDeviceFound()
                             onNavigateBack()
                         },
                         enabled = !isProcessingAttendance && !isValidatingAttendance
@@ -206,7 +231,16 @@ fun AttendanceMarkingScreen(
                         onCancel = {
                             Timber.d("🔙 User cancelled due to permission denial")
                             onNavigateBack()
-                        }
+                        },
+                        bleViewModel = bleViewModel,
+                        onNavigateBack = {
+                            Timber.d("🔙 User clicked back from permission denied screen")
+                            // Stop scanning before navigating back
+                            bleViewModel.stopScanning()
+                            bleViewModel.resetDeviceFound()
+                            onNavigateBack()
+                        },
+                        attendanceViewModel = attendanceViewModel
                     )
                 }
 
@@ -234,6 +268,11 @@ fun AttendanceMarkingScreen(
                         },
                         onCancel = {
                             Timber.d("🔙 User cancelled after error")
+                            // Stop scanning before navigating back
+                            attendanceViewModel.disableAutoScan()
+
+                            bleViewModel.stopScanning()
+                            bleViewModel.resetDeviceFound()
                             onNavigateBack()
                         }
                     )
@@ -341,7 +380,10 @@ private fun ProcessingAttendanceContent() {
 
 @Composable
 private fun PermissionDeniedContent(
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    bleViewModel: BleViewModel,
+    onNavigateBack: () -> Unit, // Default back action
+    attendanceViewModel: AttendanceViewModel
 ) {
     Column(
         modifier = Modifier
@@ -383,7 +425,14 @@ private fun PermissionDeniedContent(
                 )
 
                 Button(
-                    onClick = onCancel,
+                    onClick = {
+                        Timber.d("🔙 User cancelled due to permission denial")
+                        // Disable auto-scanning and stop current scanning
+                        attendanceViewModel.disableAutoScan()
+                        bleViewModel.stopScanning()
+                        bleViewModel.resetDeviceFound()
+                        onNavigateBack()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF007AFF)
@@ -446,7 +495,7 @@ private fun AttendanceErrorContent(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedButton(
-                        onClick = onCancel,
+                        onClick = onCancel, // This will call the updated onCancel
                         modifier = Modifier.weight(1f),
                         colors = buttonColors(
                             contentColor = Color(0xFF8E8E93)

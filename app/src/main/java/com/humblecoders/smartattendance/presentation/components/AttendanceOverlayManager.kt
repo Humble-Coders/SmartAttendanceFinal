@@ -1,6 +1,7 @@
 package com.humblecoders.smartattendance.presentation.components
 
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import timber.log.Timber
 
 enum class OverlayState {
@@ -9,6 +10,8 @@ enum class OverlayState {
     CLASSROOM_DETECTED
 }
 
+// ADD these new state variables at the top of AttendanceOverlayManager
+
 @Composable
 fun AttendanceOverlayManager(
     overlayState: OverlayState,
@@ -16,24 +19,53 @@ fun AttendanceOverlayManager(
     onOverlayDismissed: () -> Unit,
     onSequenceComplete: () -> Unit
 ) {
-    var currentState by remember(overlayState) { mutableStateOf(overlayState) }
+    var currentState by remember { mutableStateOf(OverlayState.NONE) }
+    var roomDetectionStartTime by remember { mutableStateOf(0L) }
+    var pendingClassroomDetected by remember { mutableStateOf(false) }
 
-    // Handle overlay state changes
+    // Handle incoming overlay state changes
     LaunchedEffect(overlayState) {
-        currentState = overlayState
-        if (overlayState != OverlayState.NONE) {
-            Timber.d("🎭 Overlay state changed to: $overlayState")
+        when (overlayState) {
+            OverlayState.ROOM_DETECTION_STARTING -> {
+                roomDetectionStartTime = System.currentTimeMillis()
+                currentState = OverlayState.ROOM_DETECTION_STARTING
+                pendingClassroomDetected = false
+            }
+            OverlayState.CLASSROOM_DETECTED -> {
+                if (currentState == OverlayState.ROOM_DETECTION_STARTING) {
+                    val elapsedTime = System.currentTimeMillis() - roomDetectionStartTime
+                    if (elapsedTime < 2000L) {
+                        // Mark that classroom detected is pending, but don't change state yet
+                        pendingClassroomDetected = true
+                        return@LaunchedEffect
+                    }
+                }
+                // If room detection has run for 2+ seconds or not showing, show classroom detected
+                currentState = OverlayState.CLASSROOM_DETECTED
+                pendingClassroomDetected = false
+            }
+            OverlayState.NONE -> {
+                currentState = OverlayState.NONE
+                pendingClassroomDetected = false
+            }
         }
     }
 
+    // Render only the current state
     when (currentState) {
         OverlayState.ROOM_DETECTION_STARTING -> {
             RoomDetectionStartingOverlay(
                 roomName = roomName,
+                autoHideAfterMs = 2000L,
                 onDismiss = {
-                    Timber.d("🎭 Room detection overlay dismissed")
-                    currentState = OverlayState.NONE
-                    onOverlayDismissed()
+                    if (pendingClassroomDetected) {
+                        // Transition to classroom detected
+                        currentState = OverlayState.CLASSROOM_DETECTED
+                        pendingClassroomDetected = false
+                    } else {
+                        currentState = OverlayState.NONE
+                        onOverlayDismissed()
+                    }
                 }
             )
         }
@@ -42,7 +74,6 @@ fun AttendanceOverlayManager(
             ClassroomDetectedOverlay(
                 roomName = roomName,
                 onDismiss = {
-                    Timber.d("🎭 Classroom detected overlay dismissed, starting face auth")
                     currentState = OverlayState.NONE
                     onOverlayDismissed()
                     onSequenceComplete()

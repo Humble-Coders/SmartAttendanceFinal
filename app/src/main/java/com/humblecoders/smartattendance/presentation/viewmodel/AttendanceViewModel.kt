@@ -44,71 +44,16 @@ class AttendanceViewModel(
     private val _isCheckingSession = MutableStateFlow(false)
     val isCheckingSession: StateFlow<Boolean> = _isCheckingSession.asStateFlow()
 
+    private val _autoScanEnabled = MutableStateFlow(true)
+    val autoScanEnabled: StateFlow<Boolean> = _autoScanEnabled.asStateFlow()
+
     /**
      * NEW: Validate attendance before Face.io authentication
      * This performs all checks except roll number verification
      */
-    fun validateAttendanceBeforeAuth(
-        rollNumber: String,
-        deviceRoom: String = "",
-        isExtra: Boolean = false,
-        onSuccess: () -> Unit,
-        onError: (String) -> Unit
-    ) {
-        viewModelScope.launch {
-            try {
-                val attendanceType = if (isExtra) "extra" else "regular"
-                Timber.d("🔍 Starting pre-authentication validation for $attendanceType attendance")
+    // REPLACE the validateAttendanceBeforeAuth method signature with this:
 
-                // Get student profile data
-                val profileData = profileRepository.profileData.first()
-                val className = profileData.className
 
-                if (className.isBlank()) {
-                    onError("No class information available in profile")
-                    return@launch
-                }
-
-                // Get current session data
-                val session = _currentSession.value
-                if (session == null) {
-                    onError("No active session found")
-                    return@launch
-                }
-
-                Timber.d("👤 Student info: rollNumber=$rollNumber, class=$className")
-                Timber.d("📚 Session info: subject=${session.subject}, room=${session.room}, type=${session.type}, isExtra=${session.isExtra}")
-
-                // Call repository method for comprehensive validation
-                val result = attendanceRepository.validateComprehensiveAttendance(
-                    rollNumber = rollNumber,
-                    className = className,
-                    session = session,
-                    deviceRoom = deviceRoom,
-                    isExtra = isExtra
-                )
-
-                if (result.isSuccess) {
-                    val validationResult = result.getOrNull()!!
-                    if (validationResult.isValid) {
-                        Timber.i("✅ Pre-authentication validation successful")
-                        onSuccess()
-                    } else {
-                        Timber.w("⚠️ Pre-authentication validation failed: ${validationResult.reason}")
-                        onError(validationResult.reason)
-                    }
-                } else {
-                    val error = result.exceptionOrNull()?.message ?: "Validation failed"
-                    Timber.e("❌ Pre-authentication validation error: $error")
-                    onError(error)
-                }
-
-            } catch (e: Exception) {
-                Timber.e(e, "💥 Unexpected error during pre-authentication validation")
-                onError("Validation error: ${e.message}")
-            }
-        }
-    }
 
     /**
      * NEW: Mark attendance after Face.io authentication
@@ -526,14 +471,7 @@ class AttendanceViewModel(
     /**
      * Clear attendance data (for logout/reset)
      */
-    fun clearAttendanceData() {
-        _attendanceHistory.value = emptyList()
-        _attendanceStats.value = null
-        _currentSession.value = null
-        _isSessionActive.value = false
-        _isAttendanceCompletedToday.value = false // ADD THIS LINE
-        Timber.d("🧹 Cleared attendance data")
-    }
+
 
     /**
      * Initialize ViewModel - sync profile and load data
@@ -645,5 +583,117 @@ class AttendanceViewModel(
     fun resetAttendanceStatus() {
         _isAttendanceCompletedToday.value = false
         Timber.d("🔄 Attendance completion status reset")
+    }
+
+
+
+
+
+// ADD these new methods at the end of AttendanceViewModel class:
+
+    /**
+     * Disable auto-scanning (when attendance fails or user cancels)
+     */
+    fun disableAutoScan() {
+        _autoScanEnabled.value = false
+        Timber.d("🛑 Auto-scanning disabled - user must manually restart")
+    }
+
+    /**
+     * Enable auto-scanning (when user manually checks session)
+     */
+    fun enableAutoScan() {
+        _autoScanEnabled.value = true
+        Timber.d("✅ Auto-scanning enabled")
+    }
+
+    /**
+     * Reset auto-scan state (for logout/reset)
+     */
+    fun resetAutoScanState() {
+        _autoScanEnabled.value = true
+        Timber.d("🔄 Auto-scan state reset to enabled")
+    }
+
+    // ALSO update the clearAttendanceData method to reset auto-scan state:
+    fun clearAttendanceData() {
+        _attendanceHistory.value = emptyList()
+        _attendanceStats.value = null
+        _currentSession.value = null
+        _isSessionActive.value = false
+        _isAttendanceCompletedToday.value = false
+        _autoScanEnabled.value = true // ADD this line
+        Timber.d("🧹 Cleared attendance data and reset auto-scan state")
+    }
+
+
+    // REPLACE the validateAttendanceBeforeAuth method signature with this:
+
+    fun validateAttendanceBeforeAuth(
+        rollNumber: String,
+        deviceRoom: String = "",
+        isExtra: Boolean = false,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+        onStopScanning: (() -> Unit)? = null // ADD this callback
+    ) {
+        viewModelScope.launch {
+            try {
+                val attendanceType = if (isExtra) "extra" else "regular"
+                Timber.d("🔍 Starting pre-authentication validation for $attendanceType attendance")
+
+                // Get student profile data
+                val profileData = profileRepository.profileData.first()
+                val className = profileData.className
+
+                if (className.isBlank()) {
+                    onStopScanning?.invoke() // Stop scanning on error
+                    onError("No class information available in profile")
+                    return@launch
+                }
+
+                // Get current session data
+                val session = _currentSession.value
+                if (session == null) {
+                    onStopScanning?.invoke() // Stop scanning on error
+                    onError("No active session found")
+                    return@launch
+                }
+
+                Timber.d("👤 Student info: rollNumber=$rollNumber, class=$className")
+                Timber.d("📚 Session info: subject=${session.subject}, room=${session.room}, type=${session.type}, isExtra=${session.isExtra}")
+
+                // Call repository method for comprehensive validation
+                val result = attendanceRepository.validateComprehensiveAttendance(
+                    rollNumber = rollNumber,
+                    className = className,
+                    session = session,
+                    deviceRoom = deviceRoom,
+                    isExtra = isExtra
+                )
+
+                if (result.isSuccess) {
+                    val validationResult = result.getOrNull()!!
+                    if (validationResult.isValid) {
+                        Timber.i("✅ Pre-authentication validation successful")
+                        onSuccess()
+                    } else {
+                        Timber.w("⚠️ Pre-authentication validation failed: ${validationResult.reason}")
+                        onStopScanning?.invoke() // Stop scanning on validation failure
+                        onError(validationResult.reason)
+                    }
+                } else {
+                    val error = result.exceptionOrNull()?.message ?: "Validation failed"
+                    Timber.e("❌ Pre-authentication validation error: $error")
+                    onStopScanning?.invoke() // Stop scanning on error
+                    onError(error)
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Unexpected error during pre-authentication validation")
+                onStopScanning?.invoke() // Stop scanning on exception
+                onError("Validation error: ${e.message}")
+            }
+        }
     }
 }

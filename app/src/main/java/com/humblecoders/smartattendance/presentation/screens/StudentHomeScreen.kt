@@ -9,7 +9,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.ButtonDefaults.buttonColors
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +46,11 @@ fun StudentHomeScreen(
     val detectedSubjectCode by bleViewModel.detectedSubjectCode.collectAsState()
     val profileData by profileViewModel.profileData.collectAsState()
     val attendanceHistory by attendanceViewModel.attendanceHistory.collectAsState()
+
+    var overlaySequenceInProgress by remember { mutableStateOf(false) } // ADD this new variable
+    var lastDetectedDevice by remember { mutableStateOf<String?>(null) } // A
+    val autoScanEnabled by attendanceViewModel.autoScanEnabled.collectAsState()
+
 
     // Local UI state
     var showLogoutDialog by remember { mutableStateOf(false) }
@@ -114,9 +118,13 @@ fun StudentHomeScreen(
 
     // UPDATED: Only start BLE scanning when session becomes active
     // REPLACE the existing LaunchedEffect(isSessionActive, currentRoom, isAttendanceMarked) with:
-    LaunchedEffect(isSessionActive, currentRoom, isAttendanceCompletedToday) {
-        if (isSessionActive && currentRoom.isNotBlank() && !isAttendanceCompletedToday) {
-            Timber.d("🚀 Active session detected and attendance not completed, starting BLE scanning for room: $currentRoom")
+    LaunchedEffect(isSessionActive, currentRoom, isAttendanceCompletedToday, autoScanEnabled) {
+        if (isSessionActive &&
+            currentRoom.isNotBlank() &&
+            !isAttendanceCompletedToday &&
+            autoScanEnabled // ADD this condition
+        ) {
+            Timber.d("🚀 Active session detected, attendance not completed, and auto-scan enabled - starting BLE scanning for room: $currentRoom")
 
             // Show room detection starting overlay
             triggerRoomDetectionSequence(
@@ -126,11 +134,12 @@ fun StudentHomeScreen(
 
             // Start BLE scanning for specific room
             bleViewModel.startScanningForRoom(currentRoom)
-        } else if (!isSessionActive || isAttendanceCompletedToday) {
-            // Stop BLE scanning if session becomes inactive OR attendance is completed
+        } else {
+            // Stop BLE scanning if any condition is not met
             val reason = when {
                 !isSessionActive -> "No active session"
                 isAttendanceCompletedToday -> "Attendance completed today"
+                !autoScanEnabled -> "Auto-scan disabled (manual restart required)"
                 else -> "Unknown reason"
             }
             Timber.d("⏹️ Stopping BLE scanning: $reason")
@@ -141,7 +150,12 @@ fun StudentHomeScreen(
 
     // Handle device detection and validation
     LaunchedEffect(deviceFound, detectedDeviceRoom, detectedSubjectCode) {
-        if (deviceFound && isSessionActive && detectedDeviceRoom != null) {
+        if (deviceFound &&
+            isSessionActive &&
+            detectedDeviceRoom != null &&
+            !overlaySequenceInProgress && // Prevent if sequence is already in progress
+            lastDetectedDevice != detectedDeviceRoom // Prevent duplicate processing of same device
+        ) {
             val detectedRoomName = bleViewModel.getDetectedRoomName()
             val detectedSubject = detectedSubjectCode
 
@@ -150,36 +164,24 @@ fun StudentHomeScreen(
 
             // Check if detected room matches session room
             if (bleViewModel.isDetectedRoomMatching(currentRoom)) {
-                // Additional validation: check if subject codes match (optional)
-                if (detectedSubject != null && detectedSubject.equals(currentSubject, ignoreCase = true)) {
-                    Timber.d("✅ Perfect match! Room: $detectedRoomName, Subject: $detectedSubject")
-                    // Show classroom detected overlay
-                    triggerClassroomDetectedSequence(
-                        onStateChange = { overlayState = it },
-                        roomName = currentRoom
-                    )
-                } else if (detectedSubject != null) {
-                    Timber.w("⚠️ Room matches but subject differs. Detected: $detectedSubject, Session: $currentSubject")
-                    // You can decide whether to proceed or not
-                    // For now, let's proceed with room match only
-                    triggerClassroomDetectedSequence(
-                        onStateChange = { overlayState = it },
-                        roomName = currentRoom
-                    )
-                } else {
-                    Timber.w("⚠️ Room matches but no subject code detected")
-                    // Proceed with room match only
-                    triggerClassroomDetectedSequence(
-                        onStateChange = { overlayState = it },
-                        roomName = currentRoom
-                    )
-                }
+                // Mark that we've processed this device
+                lastDetectedDevice = detectedDeviceRoom
+                overlaySequenceInProgress = true
+
+                Timber.d("✅ Room match confirmed, starting overlay sequence")
+
+                // Show classroom detected overlay
+                triggerClassroomDetectedSequence(
+                    onStateChange = { overlayState = it },
+                    roomName = currentRoom
+                )
             } else {
                 Timber.w("❌ Room mismatch. Detected: $detectedRoomName, Session: $currentRoom")
                 bleViewModel.resetDeviceFound()
             }
         }
     }
+
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -414,115 +416,75 @@ fun StudentHomeScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Action Buttons
-            Row(
+            Button(
+                onClick = {
+                    if (profileData.className.isNotBlank()) {
+                        Timber.d("🔍 Check session triggered")
+
+                        // Re-enable auto-scanning when user manually checks session
+                        attendanceViewModel.enableAutoScan()
+
+                        // Clear any active overlays and reset sequence state
+                        overlayState = OverlayState.NONE
+                        overlaySequenceInProgress = false
+                        lastDetectedDevice = null
+
+                        // Stop any current BLE scanning first
+                        bleViewModel.stopScanning()
+                        bleViewModel.resetDeviceFound()
+
+                        // Reset states
+                        hasCheckedInitialSession = false
+                        attendanceViewModel.resetAttendanceStatus()
+
+                        attendanceViewModel.checkActiveSession { result ->
+                            isSessionActive = result.isActive
+                            if (result.session != null) {
+                                currentSubject = result.session!!.subject
+                                currentRoom = result.session!!.room
+                                currentType = result.session!!.type
+                                isAttendanceMarked = false
+
+                                if (result.isActive) {
+                                    Timber.d("✅ Session check found active session: $currentSubject in $currentRoom")
+                                    // BLE scanning will start automatically due to the LaunchedEffect above
+                                } else {
+                                    Timber.d("⚪ Session check found no active session")
+                                }
+                            } else {
+                                currentSubject = ""
+                                currentRoom = ""
+                                currentType = ""
+                                isAttendanceMarked = false
+                            }
+                            hasCheckedInitialSession = true
+                        }
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF007AFF)
+                ),
+                enabled = !isCheckingSession
             ) {
-                // Check Session Button - Renamed and focused on session checking only
-                Button(
-                    onClick = {
-                        if (profileData.className.isNotBlank()) {
-                            Timber.d("🔍 Check session triggered")
-                            // Reset the initial check flag to allow re-checking
-                            hasCheckedInitialSession = false
-                            attendanceViewModel.resetAttendanceStatus()
-
-
-                            attendanceViewModel.checkActiveSession { result ->
-                                isSessionActive = result.isActive
-                                if (result.session != null) {
-                                    currentSubject = result.session!!.subject
-                                    currentRoom = result.session!!.room
-                                    currentType = result.session!!.type
-
-                                    // NEW: Reset attendance marked flag when checking for new session
-                                    isAttendanceMarked = false
-
-                                    if (result.isActive) {
-                                        Timber.d("✅ Session check found active session: $currentSubject in $currentRoom")
-                                    } else {
-                                        Timber.d("⚪ Session check found no active session")
-                                        // Stop scanning if session is no longer active
-                                        bleViewModel.stopScanning()
-                                    }
-                                } else {
-                                    currentSubject = ""
-                                    currentRoom = ""
-                                    currentType = ""
-                                    isAttendanceMarked = false
-                                    // Stop scanning if no session data
-                                    bleViewModel.stopScanning()
-                                }
-                                // Mark as checked again
-                                hasCheckedInitialSession = true
-                            }
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF007AFF)
-                    ),
-                    enabled = !isCheckingSession
-                ) {
-                    if (isCheckingSession) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Check Session",
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Check Session", fontWeight = FontWeight.Medium)
-                }
-
-                // Restart Scan Button - NEW: Restarts BLE scanning only if session is active AND attendance not marked
-                OutlinedButton(
-                    onClick = {
-                        if (isSessionActive && currentRoom.isNotBlank() && !isAttendanceMarked) {
-                            Timber.d("🔄 Restart BLE scan triggered for room: $currentRoom")
-                            // Stop current scanning
-                            bleViewModel.stopScanning()
-                            // Reset device detection state
-                            bleViewModel.resetDeviceFound()
-                            // Start scanning again after a short delay
-                            kotlinx.coroutines.MainScope().launch {
-                                kotlinx.coroutines.delay(500)
-                                bleViewModel.startScanningForRoom(currentRoom)
-                                Timber.d("📡 BLE scanning restarted for room: $currentRoom")
-                            }
-                        } else {
-                            val reason = when {
-                                !isSessionActive -> "no active session"
-                                currentRoom.isBlank() -> "no room available"
-                                isAttendanceMarked -> "attendance already marked"
-                                else -> "unknown reason"
-                            }
-                            Timber.w("⚠️ Cannot restart scan - $reason")
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = buttonColors(
-                        contentColor = if (isSessionActive && !isAttendanceMarked) Color(0xFF34C759) else Color(0xFF8E8E93)
-                    ),
-                    enabled = isSessionActive && currentRoom.isNotBlank() && !isAttendanceCompletedToday                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Restart Scan",
-                        modifier = Modifier.size(16.dp)
+                if (isCheckingSession) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Restart Scan", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Check Session",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Check Session", fontWeight = FontWeight.Medium)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -626,7 +588,11 @@ fun StudentHomeScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "BLE Scanning: Stopped (Attendance Complete)",
+                                    text = when {
+                                        isAttendanceCompletedToday -> "BLE Scanning: Stopped (Attendance Complete)"
+                                        bleState == BleState.IDLE && isSessionActive -> "BLE Scanning: Stopped (Restart needed)"
+                                        else -> "BLE Scanning: Stopped (Attendance Complete)"
+                                    },
                                     fontSize = 14.sp,
                                     color = Color(0xFF8E8E93),
                                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
@@ -828,21 +794,23 @@ fun StudentHomeScreen(
         roomName = currentRoom,
         onOverlayDismissed = {
             overlayState = OverlayState.NONE
+            // Don't reset overlaySequenceInProgress here - let it complete
         },
         onSequenceComplete = {
-            // Classroom detected overlay completed, start face authentication
+            // Classroom detected overlay completed
             Timber.d("🎭 Overlay sequence complete, navigating to face authentication")
+
+            // Reset all overlay-related states
+            overlayState = OverlayState.NONE
+            overlaySequenceInProgress = false
+            lastDetectedDevice = null
+
+            // Navigate immediately without delay
             onAttendanceClick()
             bleViewModel.resetAndContinueScanning()
         }
     )
 
-    // NEW: Listen for successful attendance marking from navigation
-    LaunchedEffect(Unit) {
-        // This will be triggered when returning from successful attendance
-        // We need to check if we just returned from AttendanceSuccessScreen
-        // For now, we'll use a simple approach - check attendance history changes
-    }
 
     // NEW: Monitor attendance history to detect when new attendance is marked
     LaunchedEffect(attendanceHistory) {
