@@ -11,13 +11,15 @@ import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewMod
 import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import com.humblecoders.smartattendance.data.model.AttendanceSuccessData
+import com.humblecoders.smartattendance.utils.BluetoothManager
 import timber.log.Timber
 
 @Composable
 fun AppNavigation(
     bleViewModel: BleViewModel,
     profileViewModel: ProfileViewModel,
-    attendanceViewModel: AttendanceViewModel
+    attendanceViewModel: AttendanceViewModel,
+    bluetoothManager: BluetoothManager // ADD this parameter
 ) {
     val navController = rememberNavController()
     val profileData by profileViewModel.profileData.collectAsState()
@@ -64,6 +66,7 @@ fun AppNavigation(
                 bleViewModel = bleViewModel,
                 profileViewModel = profileViewModel,
                 attendanceViewModel = attendanceViewModel,
+                bluetoothManager = bluetoothManager, // ADD this line
                 onAttendanceClick = {
                     Timber.d("🧭 Navigating to Attendance Marking from Home")
                     navController.navigate(Screen.AttendanceMarking.route)

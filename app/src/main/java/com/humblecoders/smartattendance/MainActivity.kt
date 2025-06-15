@@ -19,6 +19,7 @@ import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import com.humblecoders.smartattendance.presentation.navigation.AppNavigation
 import com.humblecoders.smartattendance.ui.theme.SmartAttendanceTheme
+import com.humblecoders.smartattendance.utils.BluetoothManager
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -34,6 +35,9 @@ class MainActivity : ComponentActivity() {
     lateinit var profileViewModel: ProfileViewModel
     lateinit var attendanceViewModel: AttendanceViewModel
 
+    // NEW: Bluetooth Manager
+    private lateinit var bluetoothManager: BluetoothManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -42,6 +46,9 @@ class MainActivity : ComponentActivity() {
 
         // Initialize Firebase
         initializeFirebase()
+
+        // Initialize Bluetooth Manager
+        initializeBluetoothManager()
 
         // Initialize repositories
         initializeRepositories()
@@ -61,7 +68,8 @@ class MainActivity : ComponentActivity() {
                     AppNavigation(
                         bleViewModel = bleViewModel,
                         profileViewModel = profileViewModel,
-                        attendanceViewModel = attendanceViewModel
+                        attendanceViewModel = attendanceViewModel,
+                        bluetoothManager = bluetoothManager // Pass to navigation
                     )
                 }
             }
@@ -79,6 +87,16 @@ class MainActivity : ComponentActivity() {
 
         } catch (e: Exception) {
             Timber.e(e, "🔥 Failed to initialize Firebase")
+        }
+    }
+
+    private fun initializeBluetoothManager() {
+        try {
+            bluetoothManager = BluetoothManager(this)
+            Timber.d("📡 BluetoothManager initialized successfully")
+            Timber.d("📡 ${bluetoothManager.getBluetoothStateSummary()}")
+        } catch (e: Exception) {
+            Timber.e(e, "📡 Failed to initialize BluetoothManager")
         }
     }
 
@@ -125,6 +143,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         Timber.d("📱 MainActivity: onResume - App became active")
+
+        // Log current Bluetooth state
+        if (::bluetoothManager.isInitialized) {
+            Timber.d("📡 ${bluetoothManager.getBluetoothStateSummary()}")
+        }
 
         // Reinitialize BLE if needed
         if (::bleViewModel.isInitialized) {

@@ -9,7 +9,7 @@ import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun BluetoothPermissionHandler(
+fun BluetoothPermissionHandler2(
     onPermissionsGranted: () -> Unit
 ) {
     val bluetoothPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

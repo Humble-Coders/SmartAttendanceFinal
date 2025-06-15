@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
+import android.bluetooth.BluetoothManager as AndroidBluetoothManager
+import android.bluetooth.BluetoothAdapter
 
 class BleRepository(private val context: Context) {
 
@@ -50,6 +52,13 @@ class BleRepository(private val context: Context) {
             return
         }
 
+        // NEW: Check Bluetooth state
+        if (getBluetoothState() != BluetoothAdapterState.ENABLED) {
+            _bleState.value = BleState.BLUETOOTH_OFF
+            Timber.w("📡 Bluetooth is not enabled")
+            return
+        }
+
         if (isScanning) {
             Timber.d("📡 Already scanning, updating target room to: $roomName")
             targetRoom = roomName
@@ -68,6 +77,14 @@ class BleRepository(private val context: Context) {
             _bleState.value = BleState.NO_PERMISSION
             return
         }
+
+        if (getBluetoothState() != BluetoothAdapterState.ENABLED) {
+            _bleState.value = BleState.BLUETOOTH_OFF
+            Timber.w("📡 Bluetooth is not enabled")
+            return
+        }
+
+
 
         if (isScanning) {
             Timber.d("📡 Already scanning, ignoring start request")
@@ -343,6 +360,27 @@ class BleRepository(private val context: Context) {
         val detectedRoom = getDetectedRoomName()
         return detectedRoom?.equals(targetRoom, ignoreCase = true) == true
     }
+
+    fun isBluetoothAvailable(): Boolean {
+        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as AndroidBluetoothManager
+        val bluetoothAdapter = bluetoothManager.adapter
+        return bluetoothAdapter?.isEnabled == true
+    }
+
+    /**
+     * Get Bluetooth adapter state
+     */
+    fun getBluetoothState(): BluetoothAdapterState {
+        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as AndroidBluetoothManager
+        val bluetoothAdapter = bluetoothManager.adapter
+
+        return when {
+            bluetoothAdapter == null -> BluetoothAdapterState.NOT_SUPPORTED
+            !bluetoothAdapter.isEnabled -> BluetoothAdapterState.DISABLED
+            else -> BluetoothAdapterState.ENABLED
+        }
+    }
+
 }
 
 enum class BleState {
@@ -351,4 +389,11 @@ enum class BleState {
     DEVICE_FOUND,
     BLUETOOTH_OFF,
     NO_PERMISSION
+}
+
+
+enum class BluetoothAdapterState {
+    NOT_SUPPORTED,
+    DISABLED,
+    ENABLED
 }

@@ -27,8 +27,11 @@ import com.humblecoders.smartattendance.presentation.components.triggerClassroom
 import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewModel
-import kotlinx.coroutines.launch
 import timber.log.Timber
+import com.humblecoders.smartattendance.utils.BluetoothManager
+import com.humblecoders.smartattendance.presentation.components.BluetoothEnableDialog
+import com.humblecoders.smartattendance.presentation.components.BluetoothPermissionInstructionsDialog
+import com.humblecoders.smartattendance.utils.AppLifecycleObserver
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,7 +40,9 @@ fun StudentHomeScreen(
     profileViewModel: ProfileViewModel,
     attendanceViewModel: AttendanceViewModel,
     onAttendanceClick: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    bluetoothManager: BluetoothManager, // ADD this parameter
+
 ) {
     // Collect state from ViewModels
     val bleState by bleViewModel.bleState.collectAsState()
@@ -46,6 +51,11 @@ fun StudentHomeScreen(
     val detectedSubjectCode by bleViewModel.detectedSubjectCode.collectAsState()
     val profileData by profileViewModel.profileData.collectAsState()
     val attendanceHistory by attendanceViewModel.attendanceHistory.collectAsState()
+
+    // NEW: Bluetooth permission and state management
+    var showBluetoothDialog by remember { mutableStateOf(false) }
+    var showPermissionInstructions by remember { mutableStateOf(false) }
+    var bluetoothPermissionsGranted by remember { mutableStateOf(false) }
 
     var overlaySequenceInProgress by remember { mutableStateOf(false) } // ADD this new variable
     var lastDetectedDevice by remember { mutableStateOf<String?>(null) } // A
@@ -70,10 +80,54 @@ fun StudentHomeScreen(
 
     val isAttendanceCompletedToday by attendanceViewModel.isAttendanceCompletedToday.collectAsState()
 
+
+    fun requestBluetoothPermissions(
+        bluetoothManager: BluetoothManager,
+        onResult: (Boolean) -> Unit
+    ) {
+        bluetoothManager.requestPermissions { granted ->
+            onResult(granted)
+        }
+    }
+
+
+    LaunchedEffect(Unit) {
+        // Check initial Bluetooth state
+        when {
+            !bluetoothManager.isBluetoothSupported() -> {
+                Timber.w("📡 Bluetooth not supported on this device")
+            }
+            !bluetoothManager.isBluetoothEnabled() -> {
+                Timber.d("📡 Bluetooth disabled, will show enable dialog when needed")
+                showBluetoothDialog = true
+            }
+            bluetoothManager.hasRequiredPermissions() -> {
+                Timber.d("📡 Bluetooth permissions already granted")
+                bluetoothPermissionsGranted = true
+            }
+            bluetoothManager.getPermissionDenialCount() >= 2 -> {
+                Timber.d("📡 Permissions denied 2+ times, need settings redirect")
+                showPermissionInstructions = true
+            }
+            else -> {
+                Timber.d("📡 Need to request Bluetooth permissions")
+                requestBluetoothPermissions(bluetoothManager) { granted ->
+                    bluetoothPermissionsGranted = granted
+                    if (!granted && bluetoothManager.getPermissionDenialCount() >= 2) {
+                        showPermissionInstructions = true
+                    }
+                }
+            }
+        }
+    }
+
     // Override local checking state with ViewModel state
     LaunchedEffect(isCheckingSessionVM) {
         isCheckingSession = isCheckingSessionVM
     }
+
+    // NEW: Enhanced Bluetooth permission handling
+
 
     // Handle Bluetooth permissions (but don't auto-start scanning)
     BluetoothPermissionHandler(
@@ -118,13 +172,16 @@ fun StudentHomeScreen(
 
     // UPDATED: Only start BLE scanning when session becomes active
     // REPLACE the existing LaunchedEffect(isSessionActive, currentRoom, isAttendanceMarked) with:
-    LaunchedEffect(isSessionActive, currentRoom, isAttendanceCompletedToday, autoScanEnabled) {
+    // UPDATED: Start BLE scanning with Bluetooth checks
+    LaunchedEffect(isSessionActive, currentRoom, isAttendanceCompletedToday, autoScanEnabled, bluetoothPermissionsGranted) {
         if (isSessionActive &&
             currentRoom.isNotBlank() &&
             !isAttendanceCompletedToday &&
-            autoScanEnabled // ADD this condition
+            autoScanEnabled &&
+            bluetoothPermissionsGranted && // NEW: Check permissions
+            bluetoothManager.isBluetoothEnabled() // NEW: Check Bluetooth state
         ) {
-            Timber.d("🚀 Active session detected, attendance not completed, and auto-scan enabled - starting BLE scanning for room: $currentRoom")
+            Timber.d("🚀 All conditions met - starting BLE scanning for room: $currentRoom")
 
             // Show room detection starting overlay
             triggerRoomDetectionSequence(
@@ -140,6 +197,8 @@ fun StudentHomeScreen(
                 !isSessionActive -> "No active session"
                 isAttendanceCompletedToday -> "Attendance completed today"
                 !autoScanEnabled -> "Auto-scan disabled (manual restart required)"
+                !bluetoothPermissionsGranted -> "Bluetooth permissions not granted"
+                !bluetoothManager.isBluetoothEnabled() -> "Bluetooth is disabled"
                 else -> "Unknown reason"
             }
             Timber.d("⏹️ Stopping BLE scanning: $reason")
@@ -183,6 +242,37 @@ fun StudentHomeScreen(
     }
 
 
+    // NEW: Monitor app lifecycle to re-check permissions when returning from settings
+    AppLifecycleObserver(
+        onAppResumed = {
+            // Re-check Bluetooth state when app resumes
+            val bluetoothState = bluetoothManager.recheckBluetoothState()
+
+            Timber.d("📡 App resumed - Bluetooth state: $bluetoothState")
+
+            // Update permission state
+            bluetoothPermissionsGranted = bluetoothState.hasPermissions
+
+            // Close dialogs if permissions/Bluetooth are now ready
+            if (bluetoothState.isFullyReady) {
+                showBluetoothDialog = false
+                showPermissionInstructions = false
+                Timber.d("✅ Bluetooth fully ready after app resume")
+            } else if (!bluetoothState.isEnabled) {
+                // Bluetooth was turned off while away
+                if (!showBluetoothDialog) {
+                    showBluetoothDialog = true
+                    Timber.d("📡 Bluetooth disabled while away, showing enable dialog")
+                }
+            }
+        },
+        onAppPaused = {
+            // Optional: You can add logic here if needed when app goes to background
+            Timber.d("⏸️ App paused from home screen")
+        }
+    )
+
+
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
@@ -208,6 +298,40 @@ fun StudentHomeScreen(
                 TextButton(onClick = { showLogoutDialog = false }) {
                     Text("Cancel")
                 }
+            }
+        )
+    }
+
+    // NEW: Show Bluetooth enable dialog
+    if (showBluetoothDialog) {
+        BluetoothEnableDialog(
+            bluetoothManager = bluetoothManager,
+            onBluetoothEnabled = {
+                showBluetoothDialog = false
+                // Check permissions after Bluetooth is enabled
+                if (bluetoothManager.hasRequiredPermissions()) {
+                    bluetoothPermissionsGranted = true
+                } else {
+                    requestBluetoothPermissions(bluetoothManager) { granted ->
+                        bluetoothPermissionsGranted = granted
+                        if (!granted && bluetoothManager.getPermissionDenialCount() >= 2) {
+                            showPermissionInstructions = true
+                        }
+                    }
+                }
+            },
+            onCancel = {
+                showBluetoothDialog = false
+            }
+        )
+    }
+
+// NEW: Show permission instructions dialog
+    if (showPermissionInstructions) {
+        BluetoothPermissionInstructionsDialog(
+            bluetoothManager = bluetoothManager,
+            onDismiss = {
+                showPermissionInstructions = false
             }
         )
     }
@@ -420,6 +544,25 @@ fun StudentHomeScreen(
                 onClick = {
                     if (profileData.className.isNotBlank()) {
                         Timber.d("🔍 Check session triggered")
+
+                        if (!bluetoothManager.isBluetoothEnabled()) {
+                            showBluetoothDialog = true
+                            return@Button
+                        }
+
+                        if (!bluetoothPermissionsGranted) {
+                            if (bluetoothManager.getPermissionDenialCount() >= 2) {
+                                showPermissionInstructions = true
+                            } else {
+                                requestBluetoothPermissions(bluetoothManager) { granted ->
+                                    bluetoothPermissionsGranted = granted
+                                    if (!granted && bluetoothManager.getPermissionDenialCount() >= 2) {
+                                        showPermissionInstructions = true
+                                    }
+                                }
+                            }
+                            return@Button
+                        }
 
                         // Re-enable auto-scanning when user manually checks session
                         attendanceViewModel.enableAutoScan()
@@ -832,4 +975,7 @@ fun StudentHomeScreen(
             }
         }
     }
+
+    // Helper function for requesting Bluetooth permissions
+
 }
