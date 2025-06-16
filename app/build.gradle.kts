@@ -86,4 +86,11 @@ dependencies {
 
     implementation ("androidx.compose.material:material-icons-extended:1.5.4")
 
+    // Splash Screen API (for Android 12+ compatibility)
+    implementation (libs.androidx.core.splashscreen)
+
+    // Animation dependencies (if not already present)
+    implementation (libs.androidx.animation)
+    implementation (libs.androidx.animation.core)
+
 }

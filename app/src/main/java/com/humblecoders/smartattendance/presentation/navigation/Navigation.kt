@@ -19,31 +19,39 @@ fun AppNavigation(
     bleViewModel: BleViewModel,
     profileViewModel: ProfileViewModel,
     attendanceViewModel: AttendanceViewModel,
-    bluetoothManager: BluetoothManager // ADD this parameter
+    bluetoothManager: BluetoothManager
 ) {
     val navController = rememberNavController()
-    val profileData by profileViewModel.profileData.collectAsState()
 
-    // Determine start destination based on profile state
-    val startDestination = if (profileData.name.isNotBlank() &&
-        profileData.rollNumber.isNotBlank() &&
-        profileData.className.isNotBlank()) {
-        Screen.Home.route
-    } else {
-        Screen.Login.route
-    }
+    // Always start with splash screen
+    val startDestination = Screen.Splash.route
 
-    // Log navigation state changes
-    LaunchedEffect(profileData) {
-        Timber.d("🧭 Navigation: Profile state changed")
-        Timber.d("📋 Profile complete: ${profileData.name.isNotBlank() && profileData.rollNumber.isNotBlank() && profileData.className.isNotBlank()}")
-        Timber.d("🎯 Start destination: $startDestination")
-    }
+    Timber.d("🧭 Navigation: Starting with splash screen")
 
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
+        // Splash Screen
+        composable(Screen.Splash.route) {
+            Timber.d("🧭 Navigating to Splash Screen")
+            SplashScreen(
+                profileViewModel = profileViewModel,
+                onNavigateToLogin = {
+                    Timber.d("🧭 Splash -> Login")
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
+                onNavigateToHome = {
+                    Timber.d("🧭 Splash -> Home")
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         // Login Screen
         composable(Screen.Login.route) {
             Timber.d("🧭 Navigating to Login Screen")
@@ -52,7 +60,6 @@ fun AppNavigation(
                 onLoginSuccess = {
                     Timber.d("🧭 Login successful, navigating to Home")
                     navController.navigate(Screen.Home.route) {
-                        // Clear login from back stack
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
                 }
@@ -66,19 +73,18 @@ fun AppNavigation(
                 bleViewModel = bleViewModel,
                 profileViewModel = profileViewModel,
                 attendanceViewModel = attendanceViewModel,
-                bluetoothManager = bluetoothManager, // ADD this line
+                bluetoothManager = bluetoothManager,
                 onAttendanceClick = {
                     Timber.d("🧭 Navigating to Attendance Marking from Home")
                     navController.navigate(Screen.AttendanceMarking.route)
                 },
                 onLogout = {
-                    Timber.d("🧭 Logout triggered, navigating to Login")
+                    Timber.d("🧭 Logout triggered, navigating to Splash")
                     // Clear all ViewModels data
                     attendanceViewModel.clearAttendanceData()
                     bleViewModel.stopScanning()
 
-                    navController.navigate(Screen.Login.route) {
-                        // Clear entire back stack
+                    navController.navigate(Screen.Splash.route) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
@@ -111,7 +117,6 @@ fun AppNavigation(
                 onNavigateToSuccess = { successData ->
                     Timber.d("🧭 Navigating to Success Screen with data: ${successData.rollNumber}")
 
-                    // Navigate to success screen with data
                     val route = Screen.AttendanceSuccess.createRoute(
                         rollNumber = successData.rollNumber,
                         subject = successData.subject,
@@ -122,14 +127,13 @@ fun AppNavigation(
                     )
 
                     navController.navigate(route) {
-                        // Remove attendance marking from back stack
                         popUpTo(Screen.AttendanceMarking.route) { inclusive = true }
                     }
                 }
             )
         }
 
-        // Attendance Success Screen - UPDATED: Now receives BleViewModel
+        // Attendance Success Screen
         composable(
             route = Screen.AttendanceSuccess.route,
             arguments = listOf(
@@ -159,7 +163,6 @@ fun AppNavigation(
                 }
             )
         ) { backStackEntry ->
-            // FIX: URL decode the parameters
             val rollNumber = java.net.URLDecoder.decode(
                 backStackEntry.arguments?.getString("rollNumber") ?: "unknown",
                 "UTF-8"
@@ -204,11 +207,10 @@ fun AppNavigation(
             )
         }
     }
-
-
 }
 
 sealed class Screen(val route: String) {
+    object Splash : Screen("splash")
     object Login : Screen("login")
     object Home : Screen("home")
     object Profile : Screen("profile")
@@ -224,7 +226,6 @@ sealed class Screen(val route: String) {
             deviceRoom: String,
             attendanceId: String
         ): String {
-            // FIX: URL encode special characters and handle empty values
             val encodedRollNumber = java.net.URLEncoder.encode(rollNumber.ifBlank { "unknown" }, "UTF-8")
             val encodedSubject = java.net.URLEncoder.encode(subject.ifBlank { "unknown" }, "UTF-8")
             val encodedRoom = java.net.URLEncoder.encode(room.ifBlank { "unknown" }, "UTF-8")
@@ -235,8 +236,4 @@ sealed class Screen(val route: String) {
             return "attendance_success/$encodedRollNumber/$encodedSubject/$encodedRoom/$encodedType/$encodedDeviceRoom/$encodedAttendanceId"
         }
     }
-
 }
-
-
-
