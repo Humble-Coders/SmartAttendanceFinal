@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.FirebaseApp
 import com.humblecoders.smartattendance.data.repository.AttendanceRepository
@@ -35,11 +36,20 @@ class MainActivity : ComponentActivity() {
     lateinit var profileViewModel: ProfileViewModel
     lateinit var attendanceViewModel: AttendanceViewModel
 
-    // NEW: Bluetooth Manager
+    // Bluetooth Manager
     private lateinit var bluetoothManager: BluetoothManager
 
+    // Splash screen control
+    private var keepSplashScreenOn = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Install Android 12+ splash screen (optional - provides native splash)
+        val splashScreen = installSplashScreen()
+
         super.onCreate(savedInstanceState)
+
+        // Keep native splash screen while app initializes
+        splashScreen.setKeepOnScreenCondition { keepSplashScreenOn }
 
         // Enable edge-to-edge display
         enableEdgeToEdge()
@@ -65,26 +75,29 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    // Main app navigation (starts with our custom splash screen)
                     AppNavigation(
                         bleViewModel = bleViewModel,
                         profileViewModel = profileViewModel,
                         attendanceViewModel = attendanceViewModel,
-                        bluetoothManager = bluetoothManager // Pass to navigation
+                        bluetoothManager = bluetoothManager
                     )
                 }
             }
+        }
+
+        // Hide native splash screen after short delay to show our custom splash
+        lifecycleScope.launch {
+            kotlinx.coroutines.delay(500) // Keep native splash for 500ms
+            keepSplashScreenOn = false
         }
     }
 
     private fun initializeFirebase() {
         try {
-            // Initialize Firebase
             FirebaseApp.initializeApp(this)
             Timber.d("🔥 Firebase initialized successfully")
-
-            // Test Firebase connection (optional)
             testFirebaseConnection()
-
         } catch (e: Exception) {
             Timber.e(e, "🔥 Failed to initialize Firebase")
         }
@@ -114,7 +127,6 @@ class MainActivity : ComponentActivity() {
 
     private fun initializeViewModels() {
         try {
-            // Initialize ViewModels with repositories
             bleViewModel = BleViewModel(bleRepository)
             profileViewModel = ProfileViewModel(profileRepository)
             attendanceViewModel = AttendanceViewModel(attendanceRepository, profileRepository)
@@ -128,12 +140,8 @@ class MainActivity : ComponentActivity() {
     private fun testFirebaseConnection() {
         lifecycleScope.launch {
             try {
-                // This is a simple test to ensure Firebase is working
                 Timber.d("🔥 Testing Firebase connection...")
-
-                // The actual connection test will happen when we try to read/write data
                 Timber.d("🔥 Firebase connection test completed")
-
             } catch (e: Exception) {
                 Timber.e(e, "🔥 Firebase connection test failed")
             }
@@ -144,12 +152,10 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         Timber.d("📱 MainActivity: onResume - App became active")
 
-        // Log current Bluetooth state
         if (::bluetoothManager.isInitialized) {
             Timber.d("📡 ${bluetoothManager.getBluetoothStateSummary()}")
         }
 
-        // Reinitialize BLE if needed
         if (::bleViewModel.isInitialized) {
             bleViewModel.initializeBle()
         }
@@ -159,7 +165,6 @@ class MainActivity : ComponentActivity() {
         super.onPause()
         Timber.d("📱 MainActivity: onPause - App going to background")
 
-        // Optionally pause BLE scanning to save battery
         if (::bleViewModel.isInitialized) {
             bleViewModel.stopScanning()
         }
@@ -169,26 +174,18 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         Timber.d("📱 MainActivity: onDestroy - Cleaning up resources")
 
-        // Clean up BLE scanning
         if (::bleViewModel.isInitialized) {
             bleViewModel.stopScanning()
         }
 
-        // Clear attendance data
         if (::attendanceViewModel.isInitialized) {
             attendanceViewModel.clearAttendanceData()
         }
     }
 
-    /**
-     * Handle back button press
-     */
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         Timber.d("📱 MainActivity: Back button pressed")
-
-        // Let the navigation component handle back navigation
-        // The new navigation system will handle this automatically
         super.onBackPressed()
     }
 }
