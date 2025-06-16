@@ -93,4 +93,11 @@ dependencies {
     implementation (libs.androidx.animation)
     implementation (libs.androidx.animation.core)
 
+
+    implementation("com.google.android.material:material:1.10.0")
+
+    implementation ("androidx.constraintlayout:constraintlayout-compose:1.0.1")
+
+
+
 }

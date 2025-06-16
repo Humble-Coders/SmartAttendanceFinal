@@ -1,9 +1,11 @@
 package com.humblecoders.smartattendance.presentation.screens
 
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,12 +15,14 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.constraintlayout.compose.ConstraintLayout
+import androidx.constraintlayout.compose.ConstraintSet
+import androidx.constraintlayout.compose.Dimension
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import kotlinx.coroutines.delay
 import timber.log.Timber
@@ -29,25 +33,38 @@ fun SplashScreen(
     onNavigateToLogin: () -> Unit,
     onNavigateToHome: () -> Unit
 ) {
-    var isAnimating by remember { mutableStateOf(false) }
-    var opacity by remember { mutableStateOf(0f) }
+    var titleOpacity by remember { mutableStateOf(0f) }
+    var loadingOpacity by remember { mutableStateOf(0f) }
     var brandingOpacity by remember { mutableStateOf(0f) }
-    var logoScale by remember { mutableStateOf(0.8f) }
+
+    // Animation progress from 0 to 1
+    var iconAnimProgress by remember { mutableStateOf(0f) }
 
     val profileData by profileViewModel.profileData.collectAsState()
 
-    // Animate logo scale
-    val animatedLogoScale by animateFloatAsState(
-        targetValue = logoScale,
-        animationSpec = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
-        label = "logoScale"
+    // Animate icon transition from center to top
+    val animatedProgress by animateFloatAsState(
+        targetValue = iconAnimProgress,
+        animationSpec = tween(durationMillis = 1500, easing = EaseOutQuart),
+        label = "iconAnimProgress"
     )
 
-    // Animate opacity
-    val animatedOpacity by animateFloatAsState(
-        targetValue = opacity,
-        animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
-        label = "opacity"
+    // Keep icon size and shadow stable during animation to prevent flickering
+    val iconSize = 140.dp
+    val shadowElevation = 16.dp
+
+    // Animate title and subtitle opacity
+    val animatedTitleOpacity by animateFloatAsState(
+        targetValue = titleOpacity,
+        animationSpec = tween(durationMillis = 800, easing = LinearEasing),
+        label = "titleOpacity"
+    )
+
+    // Animate loading indicator opacity
+    val animatedLoadingOpacity by animateFloatAsState(
+        targetValue = loadingOpacity,
+        animationSpec = tween(durationMillis = 800, easing = LinearEasing),
+        label = "loadingOpacity"
     )
 
     // Animate branding opacity
@@ -57,39 +74,28 @@ fun SplashScreen(
         label = "brandingOpacity"
     )
 
-    // Pulsing glow animation
-    val infiniteTransition = rememberInfiniteTransition(label = "infiniteTransition")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.8f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowAlpha"
-    )
-
     // Start animations
     LaunchedEffect(Unit) {
-        Timber.d("🎬 SplashScreen: Starting animations")
-
-        // Start logo scale animation
-        logoScale = 1.0f
-
-        // Delay then start main content fade in
-        delay(300)
-        opacity = 1.0f
-
-        // Start pulsing animation
+        // Display icon in center
         delay(500)
-        isAnimating = true
 
-        // Start branding animation
+        // Start moving icon from center to top
+        iconAnimProgress = 1f
+        delay(1300) // Wait for icon animation to complete
+
+        // Show title and subtitle
+        titleOpacity = 1f
+        delay(400)
+
+        // Show loading indicator
+        loadingOpacity = 1f
+        delay(500)
+
+        // Show branding
+        brandingOpacity = 1f
         delay(1500)
-        brandingOpacity = 1.0f
 
-        // Check profile and navigate after animations complete
-        delay(2500)
+        // Navigate after animations complete
         checkProfileAndNavigate(profileData, onNavigateToLogin, onNavigateToHome)
     }
 
@@ -97,120 +103,129 @@ fun SplashScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                brush = Brush.linearGradient(
+                brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF007AFF).copy(alpha = 0.85f), // Blue
-                        Color(0xFF00BFFF).copy(alpha = 0.7f),  // Cyan
-                        Color(0xFF4B0082).copy(alpha = 0.75f)  // Indigo
-                    ),
-                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                    end = androidx.compose.ui.geometry.Offset(1000f, 1000f)
+                        Color(0xFF007AFF).copy(alpha = 0.6f), // Blue
+                        Color(0xFF5856D6).copy(alpha = 0.4f)  // Purple
+                    )
                 )
             )
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Spacer(modifier = Modifier.weight(1f))
-            Spacer(modifier = Modifier.weight(1f))
+        // Create constraint set for icon animation
+        val constraints = ConstraintSet {
+            val iconRef = createRefFor("icon")
+            val titleRef = createRefFor("title")
+            val subtitleRef = createRefFor("subtitle")
+            val loadingRef = createRefFor("loading")
+            val brandingRef = createRefFor("branding")
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(32.dp)
-            ) {
-                // App Icon with enhanced animation and glow
-                Box(
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Glow effect
-                    if (isAnimating) {
-                        Text(
-                            text = "🎓",
-                            fontSize = 110.sp,
-                            modifier = Modifier
-                                .scale(animatedLogoScale * if (isAnimating) 1.2f else 1.0f)
-                                .alpha(glowAlpha * 0.3f)
-                        )
-                    }
-
-                    // Main icon
-                    Text(
-                        text = "🎓",
-                        fontSize = 110.sp,
-                        modifier = Modifier
-                            .scale(animatedLogoScale)
-                            .shadow(
-                                elevation = 20.dp,
-                                ambientColor = Color.Black.copy(alpha = 0.3f),
-                                spotColor = Color.Black.copy(alpha = 0.3f)
-                            )
-                    )
-                }
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.alpha(animatedOpacity)
-                ) {
-                    Text(
-                        text = "Smart Attend",
-                        fontSize = 42.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.shadow(
-                            elevation = 5.dp,
-                            ambientColor = Color.Black.copy(alpha = 0.2f)
-                        )
-                    )
-
-                    Text(
-                        text = "Student Portal",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White.copy(alpha = 0.9f),
-                        letterSpacing = 1.2.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-                // Loading indicator with animation
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.alpha(animatedOpacity)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = Color.White,
-                        strokeWidth = 3.dp
-                    )
-
-                    Text(
-                        text = "Loading your experience...",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White.copy(alpha = 0.8f),
-                        textAlign = TextAlign.Center
-                    )
-                }
+            // Icon constraints - smooth transition using linkTo with bias
+            constrain(iconRef) {
+                centerHorizontallyTo(parent)
+                // Use linkTo with bias for smooth vertical animation
+                linkTo(
+                    parent.top,
+                    parent.bottom,
+                    topMargin = lerp(0.dp, 120.dp, animatedProgress),
+                    bias = lerp(0.5f, 0f, animatedProgress)
+                )
             }
 
-            Spacer(modifier = Modifier.weight(1f))
-            Spacer(modifier = Modifier.weight(1f))
-            Spacer(modifier = Modifier.weight(1f))
+            constrain(titleRef) {
+                top.linkTo(iconRef.bottom, 16.dp)
+                centerHorizontallyTo(parent)
+                width = Dimension.wrapContent
+            }
 
-            // Elegant branding at bottom
+            constrain(subtitleRef) {
+                top.linkTo(titleRef.bottom, 4.dp)
+                centerHorizontallyTo(parent)
+                width = Dimension.wrapContent
+            }
+
+            constrain(loadingRef) {
+                top.linkTo(subtitleRef.bottom, 32.dp)
+                centerHorizontallyTo(parent)
+                width = Dimension.wrapContent
+            }
+
+            constrain(brandingRef) {
+                bottom.linkTo(parent.bottom, 24.dp)
+                centerHorizontallyTo(parent)
+                width = Dimension.wrapContent
+            }
+        }
+
+        ConstraintLayout(
+            constraintSet = constraints,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Icon with stable size and shadow to prevent flickering
+            Icon(
+                imageVector = Icons.Default.School,
+                contentDescription = "Smart Attend Icon",
+                modifier = Modifier
+                    .layoutId("icon")
+                    .size(iconSize),
+                tint = Color.White
+            )
+
+            // Title
+            Text(
+                text = "Smart Attend",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .layoutId("title")
+                    .alpha(animatedTitleOpacity)
+            )
+
+            // Subtitle
+            Text(
+                text = "Student Portal",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.9f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .layoutId("subtitle")
+                    .alpha(animatedTitleOpacity)
+            )
+
+            // Loading indicator
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .layoutId("loading")
+                    .alpha(animatedLoadingOpacity)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = Color.White,
+                    strokeWidth = 3.dp
+                )
+
+                Text(
+                    text = "Loading your experience...",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            // Branding at bottom
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
+                    .layoutId("branding")
                     .alpha(animatedBrandingOpacity)
-                    .padding(bottom = 50.dp)
             ) {
-                // Enhanced divider line
+                // Divider line
                 Box(
                     modifier = Modifier
                         .width(160.dp)
@@ -226,71 +241,34 @@ fun SplashScreen(
                                 )
                             )
                         )
-                        .scale(animatedBrandingOpacity, 1.0f)
                 )
 
-                // Animated branding text
-                AnimatedBrandingText(opacity = animatedBrandingOpacity)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "A Humble Solutions Product",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.9f),
+                    letterSpacing = 1.5.sp,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
 }
 
-@Composable
-private fun AnimatedBrandingText(opacity: Float) {
-    val words = listOf("A", "Humble", "Solutions", "Product")
+// Helper function to interpolate between values based on progress
+private fun lerp(start: Float, stop: Float, fraction: Float): Float {
+    return start + fraction * (stop - start)
+}
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        words.forEachIndexed { index, word ->
-            val delay = index * 150L
-            var wordOpacity by remember { mutableStateOf(0f) }
-            var wordOffset by remember { mutableStateOf(-30f) }
+private fun lerp(start: Int, stop: Int, fraction: Float): Int {
+    return start + (fraction * (stop - start)).toInt()
+}
 
-            val animatedWordOpacity by animateFloatAsState(
-                targetValue = wordOpacity,
-                animationSpec = spring(
-                    dampingRatio = 0.8f,
-                    stiffness = 600f
-                ),
-                label = "wordOpacity"
-            )
-
-            val animatedWordOffset by animateFloatAsState(
-                targetValue = wordOffset,
-                animationSpec = spring(
-                    dampingRatio = 0.8f,
-                    stiffness = 600f
-                ),
-                label = "wordOffset"
-            )
-
-            LaunchedEffect(opacity) {
-                if (opacity > 0) {
-                    kotlinx.coroutines.delay(delay)
-                    wordOpacity = 1.0f
-                    wordOffset = 0f
-                }
-            }
-
-            Text(
-                text = word,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-                letterSpacing = 2.0.sp,
-                modifier = Modifier
-                    .alpha(animatedWordOpacity)
-                    .offset(x = animatedWordOffset.dp)
-                    .shadow(
-                        elevation = 8.dp,
-                        ambientColor = Color.Black.copy(alpha = 0.4f)
-                    )
-            )
-        }
-    }
+private fun lerp(start: androidx.compose.ui.unit.Dp, stop: androidx.compose.ui.unit.Dp, fraction: Float): androidx.compose.ui.unit.Dp {
+    return androidx.compose.ui.unit.Dp(start.value + fraction * (stop.value - start.value))
 }
 
 private fun checkProfileAndNavigate(

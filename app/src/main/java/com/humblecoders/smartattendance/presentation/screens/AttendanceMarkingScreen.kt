@@ -21,8 +21,6 @@ import com.humblecoders.smartattendance.presentation.viewmodel.BleViewModel
 import com.humblecoders.smartattendance.data.model.AttendanceSuccessData
 import timber.log.Timber
 
-
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AttendanceMarkingScreen(
@@ -30,12 +28,18 @@ fun AttendanceMarkingScreen(
     profileViewModel: ProfileViewModel,
     bleViewModel: BleViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToSuccess: (AttendanceSuccessData) -> Unit
+    onNavigateToSuccess: (AttendanceSuccessData) -> Unit,
+    presetDeviceRoom: String = "" // Add this parameter
+
 ) {
     // Collect state from ViewModels
     val profileData by profileViewModel.profileData.collectAsState()
     val currentSession by attendanceViewModel.currentSession.collectAsState()
     val detectedDeviceRoom by bleViewModel.detectedDeviceRoom.collectAsState()
+    val preservedDeviceRoom by attendanceViewModel.preservedDeviceRoom.collectAsState()
+
+    // ADD: Capture device room in local state to preserve it
+    var capturedDeviceRoom by remember { mutableStateOf(presetDeviceRoom.ifBlank { detectedDeviceRoom }) }
 
     // Local UI state
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -45,7 +49,6 @@ fun AttendanceMarkingScreen(
     var isValidatingAttendance by remember { mutableStateOf(false) }
     var attendanceValidated by remember { mutableStateOf(false) }
 
-
     fun stopScanningAndNavigateBack() {
         Timber.d("🛑 Stopping BLE scanning due to navigation back from attendance screen")
         bleViewModel.stopScanning()
@@ -53,12 +56,24 @@ fun AttendanceMarkingScreen(
         onNavigateBack()
     }
 
-    // Screen lifecycle logging
+    // Capture device room when screen launches
     LaunchedEffect(Unit) {
         Timber.d("🎬 AttendanceMarkingScreen: Screen launched")
         Timber.d("📋 Profile: ${profileData.name}, Roll: ${profileData.rollNumber}, Class: ${profileData.className}")
         Timber.d("📚 Session: ${currentSession?.subject}, Room: ${currentSession?.room}")
         Timber.d("📡 BLE Device Room: $detectedDeviceRoom")
+        Timber.d("📡 Preserved device room from ViewModel: '$preservedDeviceRoom'")
+
+        capturedDeviceRoom = preservedDeviceRoom ?: ""
+        Timber.d("📡 Using device room: '$capturedDeviceRoom'")
+
+
+        kotlinx.coroutines.delay(100)
+
+        attendanceViewModel.clearPreservedDeviceRoom()
+
+
+        Timber.d("📡 Final Captured Device Room: $capturedDeviceRoom")
 
         Timber.d("🎬 AttendanceMarkingScreen: Clearing any overlay states")
         // Stop BLE scanning and reset detection state to prevent overlays
@@ -71,9 +86,6 @@ fun AttendanceMarkingScreen(
             Timber.d("🎬 AttendanceMarkingScreen: Screen disposed")
         }
     }
-
-    // NEW: Function to perform all attendance checks before Face.io auth
-// REPLACE the performAttendanceValidation function with this:
 
     fun performAttendanceValidation() {
         val session = currentSession
@@ -96,11 +108,12 @@ fun AttendanceMarkingScreen(
         Timber.d("🔍 Starting pre-authentication attendance validation")
         Timber.d("📋 Student: ${profileData.name} (${profileData.rollNumber}) from ${profileData.className}")
         Timber.d("📚 Session: ${session.subject} in ${session.room} (${session.type}) - Extra: ${session.isExtra}")
-        Timber.d("📡 Device Room: $detectedDeviceRoom")
+        Timber.d("📡 Current Device Room: $detectedDeviceRoom") // This will be null
+        Timber.d("📡 Captured Device Room: $capturedDeviceRoom") // This should have the value
 
         attendanceViewModel.validateAttendanceBeforeAuth(
             rollNumber = profileData.rollNumber,
-            deviceRoom = detectedDeviceRoom ?: "",
+            deviceRoom = capturedDeviceRoom ?: "", // Use captured device room
             isExtra = isExtra,
             onSuccess = {
                 Timber.i("✅ $attendanceType attendance validation successful")
@@ -119,6 +132,7 @@ fun AttendanceMarkingScreen(
             }
         )
     }
+
     // Handle camera permission
     CameraPermissionHandler(
         onPermissionGranted = {
@@ -135,11 +149,10 @@ fun AttendanceMarkingScreen(
     // NEW: Perform attendance validation when camera permission is granted
     LaunchedEffect(hasCameraPermission) {
         if (hasCameraPermission && !attendanceValidated && !isValidatingAttendance) {
+            Timber.d("📡 Device room before validation: Current=$detectedDeviceRoom, Captured=$capturedDeviceRoom")
             performAttendanceValidation()
         }
     }
-
-
 
     // Function to mark attendance with roll number validation only
     fun markAttendanceWithRollNumber(rollNumber: String) {
@@ -159,12 +172,17 @@ fun AttendanceMarkingScreen(
         isProcessingAttendance = true
         val isExtra = session.isExtra
 
+        // Use captured device room instead of current detected device room
+        val currentDetectedDeviceRoom = capturedDeviceRoom ?: ""
+
         Timber.d("🎯 Starting final attendance marking (post Face.io auth)")
         Timber.d("📋 Authenticated roll number: $rollNumber")
+        Timber.d("📡 Current Device Room: $detectedDeviceRoom") // Will be null
+        Timber.d("📡 Using Captured Device room: '$currentDetectedDeviceRoom'") // Should have value
 
         attendanceViewModel.markAttendanceAfterAuth(
             rollNumber = rollNumber,
-            deviceRoom = detectedDeviceRoom ?: "",
+            deviceRoom = currentDetectedDeviceRoom, // Use captured value
             isExtra = isExtra,
             onSuccess = {
                 Timber.i("🎉 Attendance marked successfully after Face.io auth!")
@@ -175,7 +193,7 @@ fun AttendanceMarkingScreen(
                     subject = session.subject,
                     room = session.room,
                     type = session.type,
-                    deviceRoom = detectedDeviceRoom ?: "",
+                    deviceRoom = currentDetectedDeviceRoom, // Use captured value
                     attendanceId = "att_${System.currentTimeMillis()}"
                 )
 
@@ -270,7 +288,6 @@ fun AttendanceMarkingScreen(
                             Timber.d("🔙 User cancelled after error")
                             // Stop scanning before navigating back
                             attendanceViewModel.disableAutoScan()
-
                             bleViewModel.stopScanning()
                             bleViewModel.resetDeviceFound()
                             onNavigateBack()
@@ -295,6 +312,8 @@ fun AttendanceMarkingScreen(
                         onAuthenticated = { rollNumber ->
                             Timber.d("🔥 WEBVIEW CALLBACK TRIGGERED!")
                             Timber.d("🆔 Authenticated roll number: $rollNumber")
+                            Timber.d("📡 Current Device Room: $detectedDeviceRoom")
+                            Timber.d("📡 Captured Device Room: $capturedDeviceRoom")
                             markAttendanceWithRollNumber(rollNumber)
                         },
                         onError = { error ->
@@ -382,7 +401,7 @@ private fun ProcessingAttendanceContent() {
 private fun PermissionDeniedContent(
     onCancel: () -> Unit,
     bleViewModel: BleViewModel,
-    onNavigateBack: () -> Unit, // Default back action
+    onNavigateBack: () -> Unit,
     attendanceViewModel: AttendanceViewModel
 ) {
     Column(
@@ -495,7 +514,7 @@ private fun AttendanceErrorContent(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedButton(
-                        onClick = onCancel, // This will call the updated onCancel
+                        onClick = onCancel,
                         modifier = Modifier.weight(1f),
                         colors = buttonColors(
                             contentColor = Color(0xFF8E8E93)

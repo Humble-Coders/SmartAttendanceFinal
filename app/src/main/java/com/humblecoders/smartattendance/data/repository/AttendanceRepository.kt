@@ -167,7 +167,7 @@ class AttendanceRepository {
         return try {
             val attendanceType = if (isExtra) "extra" else "regular"
             Timber.d("🚀 Starting $attendanceType attendance marking process")
-            Timber.d("📋 Details: rollNumber=$rollNumber, subject=$subject, group=$group, type=$type")
+            Timber.d("📋 Details: rollNumber=$rollNumber, subject=$subject, group=$group, type=$type","deviceRoom=$deviceRoom, isExtra=$isExtra")
 
             val result = firebaseRepository.markAttendance(
                 rollNumber = rollNumber,

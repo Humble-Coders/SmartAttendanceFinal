@@ -24,6 +24,9 @@ class AttendanceViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _preservedDeviceRoom = MutableStateFlow<String?>(null)
+    val preservedDeviceRoom: StateFlow<String?> = _preservedDeviceRoom.asStateFlow()
+
     // NEW: Track attendance completion status
     private val _isAttendanceCompletedToday = MutableStateFlow(false)
     val isAttendanceCompletedToday: StateFlow<Boolean> = _isAttendanceCompletedToday.asStateFlow()
@@ -55,6 +58,19 @@ class AttendanceViewModel(
     init {
         // Add this line to start observing profile changes
         observeProfileAndLoadHistory()
+    }
+
+    fun preserveDeviceRoom(deviceRoom: String?) {
+        _preservedDeviceRoom.value = deviceRoom
+        Timber.d("📡 Device room preserved: '$deviceRoom'")
+    }
+
+    /**
+     * Clear preserved device room
+     */
+    fun clearPreservedDeviceRoom() {
+        _preservedDeviceRoom.value = null
+        Timber.d("📡 Preserved device room cleared")
     }
 
     // Change from private to public:
@@ -105,6 +121,8 @@ class AttendanceViewModel(
             try {
                 val attendanceType = if (isExtra) "extra" else "regular"
                 Timber.d("🎯 Final attendance marking after Face.io auth")
+                Timber.d("📡 Device room parameter: '$deviceRoom'") // ADD this debug log
+
 
                 // Get student profile data
                 val profileData = profileRepository.profileData.first()
@@ -113,7 +131,7 @@ class AttendanceViewModel(
 
                 // Get current session data
                 val session = _currentSession.value!!
-
+                Timber.d("Device room: $deviceRoom, isExtra: $isExtra")
                 Timber.d("📡 Calling repository to mark $attendanceType attendance...")
                 val result = attendanceRepository.markAttendance(
                     rollNumber = rollNumber,
@@ -641,6 +659,8 @@ class AttendanceViewModel(
         _isSessionActive.value = false
         _isAttendanceCompletedToday.value = false
         _autoScanEnabled.value = true // ADD this line
+        _preservedDeviceRoom.value = null // Add this line
+
         Timber.d("🧹 Cleared attendance data and reset auto-scan state")
     }
 

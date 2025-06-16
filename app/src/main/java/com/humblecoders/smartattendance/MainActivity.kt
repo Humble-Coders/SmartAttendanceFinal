@@ -9,8 +9,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.google.firebase.FirebaseApp
 import com.humblecoders.smartattendance.data.repository.AttendanceRepository
 import com.humblecoders.smartattendance.data.repository.BleRepository
@@ -39,17 +39,15 @@ class MainActivity : ComponentActivity() {
     // Bluetooth Manager
     private lateinit var bluetoothManager: BluetoothManager
 
-    // Splash screen control
-    private var keepSplashScreenOn = true
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Install Android 12+ splash screen (optional - provides native splash)
+        // Install and immediately dismiss splash screen
         val splashScreen = installSplashScreen()
+        splashScreen.setKeepOnScreenCondition { false }
 
         super.onCreate(savedInstanceState)
 
-        // Keep native splash screen while app initializes
-        splashScreen.setKeepOnScreenCondition { keepSplashScreenOn }
+        // Switch to main theme after splash
+        setTheme(R.style.Theme_SmartAttendance)
 
         // Enable edge-to-edge display
         enableEdgeToEdge()
@@ -75,7 +73,6 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // Main app navigation (starts with our custom splash screen)
                     AppNavigation(
                         bleViewModel = bleViewModel,
                         profileViewModel = profileViewModel,
@@ -84,12 +81,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
-        }
-
-        // Hide native splash screen after short delay to show our custom splash
-        lifecycleScope.launch {
-            kotlinx.coroutines.delay(500) // Keep native splash for 500ms
-            keepSplashScreenOn = false
         }
     }
 

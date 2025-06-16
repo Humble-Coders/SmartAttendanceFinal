@@ -104,9 +104,23 @@ fun AppNavigation(
         }
 
         // Attendance Marking Screen
-        composable(Screen.AttendanceMarking.route) {
-            Timber.d("🧭 Navigating to Attendance Marking Screen")
+        composable(Screen.AttendanceMarking.route,
+                arguments = listOf(
+                navArgument("deviceRoom") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+                )
+        ) {
+                backStackEntry ->
+            val deviceRoom = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("deviceRoom") ?: "",
+                "UTF-8"
+            ).let { if (it == "unknown") "" else it }
+
+            Timber.d("🧭 Navigating to Attendance Marking Screen with device room: $deviceRoom")
             AttendanceMarkingScreen(
+                presetDeviceRoom = deviceRoom,
                 attendanceViewModel = attendanceViewModel,
                 profileViewModel = profileViewModel,
                 bleViewModel = bleViewModel,
@@ -115,7 +129,7 @@ fun AppNavigation(
                     navController.popBackStack()
                 },
                 onNavigateToSuccess = { successData ->
-                    Timber.d("🧭 Navigating to Success Screen with data: ${successData.rollNumber}")
+                    Timber.d("🧭 Navigating to Success Screen with data: ${successData.rollNumber}:DeviceRoom: ${successData.deviceRoom}")
 
                     val route = Screen.AttendanceSuccess.createRoute(
                         rollNumber = successData.rollNumber,
@@ -214,7 +228,13 @@ sealed class Screen(val route: String) {
     object Login : Screen("login")
     object Home : Screen("home")
     object Profile : Screen("profile")
-    object AttendanceMarking : Screen("attendance_marking")
+    // In Screen sealed class, update AttendanceMarking to accept device room
+    object AttendanceMarking : Screen("attendance_marking/{deviceRoom}") {
+        fun createRoute(deviceRoom: String = ""): String {
+            val encodedDeviceRoom = java.net.URLEncoder.encode(deviceRoom.ifBlank { "unknown" }, "UTF-8")
+            return "attendance_marking/$encodedDeviceRoom"
+        }
+    }
     object AttendanceSuccess : Screen(
         "attendance_success/{rollNumber}/{subject}/{room}/{type}/{deviceRoom}/{attendanceId}"
     ) {

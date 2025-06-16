@@ -1042,7 +1042,13 @@ fun StudentHomeScreen(
         },
         onSequenceComplete = {
             // Classroom detected overlay completed
+            val preservedDeviceRoom = bleViewModel.getDetectedDeviceRoom() ?: ""
             Timber.d("🎭 Overlay sequence complete, navigating to face authentication")
+            Timber.d("📡 Preserving device room: $detectedDeviceRoom") // ADD this debug log
+
+            attendanceViewModel.preserveDeviceRoom(preservedDeviceRoom)
+
+
 
             // Reset all overlay-related states
             overlayState = OverlayState.NONE
@@ -1051,7 +1057,6 @@ fun StudentHomeScreen(
 
             // Navigate immediately without delay
             onAttendanceClick()
-            bleViewModel.resetAndContinueScanning()
         }
     )
 
