@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import timber.log.Timber
 
+// Replace the LoginScreen composable content with this updated version:
+
 @Composable
 fun LoginScreen(
     profileViewModel: ProfileViewModel,
@@ -37,6 +39,13 @@ fun LoginScreen(
 
     var showError by remember { mutableStateOf<String?>(null) }
     var showSuccess by remember { mutableStateOf(false) }
+    var showFaceRegistration by remember { mutableStateOf(false) }
+    var classInput by remember { mutableStateOf("") }
+    var faceRegistrationCompleted by remember { mutableStateOf(false) }
+    var registeredFaceId by remember { mutableStateOf<String?>(null) }
+
+    // NEW: Toggle for already registered face
+    var hasAlreadyRegisteredFace by remember { mutableStateOf(false) }
 
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -54,6 +63,31 @@ fun LoginScreen(
             kotlinx.coroutines.delay(1500)
             onLoginSuccess()
         }
+    }
+
+    // Face Registration Screen
+    if (showFaceRegistration) {
+        FaceRegistrationScreen(
+            rollNumber = rollNumberInput,
+            onRegistrationSuccess = { faceId ->
+                Timber.d("✅ Face registration successful with ID: $faceId")
+                registeredFaceId = faceId
+                faceRegistrationCompleted = true
+                hasAlreadyRegisteredFace = false // Reset toggle since we just registered
+                showFaceRegistration = false
+                showError = null
+            },
+            onRegistrationError = { error ->
+                Timber.e("❌ Face registration failed: $error")
+                showError = "Face registration failed: $error"
+                showFaceRegistration = false
+            },
+            onNavigateBack = {
+                Timber.d("🔙 Back from face registration")
+                showFaceRegistration = false
+            }
+        )
+        return
     }
 
     Box(
@@ -82,7 +116,6 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(bottom = 48.dp)
             ) {
-                // Large graduation cap icon with shadow
                 Icon(
                     imageVector = Icons.Default.School,
                     contentDescription = "Smart Attend Icon",
@@ -97,7 +130,6 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // App Title
                 Text(
                     text = "Smart Attend",
                     fontSize = 32.sp,
@@ -106,7 +138,6 @@ fun LoginScreen(
                     textAlign = TextAlign.Center
                 )
 
-                // Subtitle
                 Text(
                     text = "Student Portal",
                     fontSize = 18.sp,
@@ -184,6 +215,35 @@ fun LoginScreen(
                         }
                     }
 
+                    // Face Registration Success Message
+                    if (faceRegistrationCompleted) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF34C759).copy(alpha = 0.1f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "✅ Face Registration Complete!",
+                                    color = Color(0xFF34C759),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    text = "You can now sign in with your registered face",
+                                    color = Color(0xFF34C759),
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
                     // Full Name Input
                     OutlinedTextField(
                         value = nameInput,
@@ -222,7 +282,6 @@ fun LoginScreen(
                     )
 
                     // Class Input
-                    var classInput by remember { mutableStateOf("") }
                     OutlinedTextField(
                         value = classInput,
                         onValueChange = { classInput = it },
@@ -240,6 +299,112 @@ fun LoginScreen(
                         ),
                         isError = classInput.isBlank() && showError != null
                     )
+
+                    // NEW: Face Registration Toggle
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFF2F2F7)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = "I have already registered my face",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF1D1D1F)
+                                )
+                                Text(
+                                    text = "Skip face registration if already completed",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF8E8E93)
+                                )
+                            }
+
+                            Switch(
+                                checked = hasAlreadyRegisteredFace,
+                                onCheckedChange = {
+                                    hasAlreadyRegisteredFace = it
+                                    if (it) {
+                                        // Reset registration completion state when toggle is enabled
+                                        faceRegistrationCompleted = false
+                                        registeredFaceId = null
+                                        showError = null
+                                    }
+                                },
+                                enabled = !isSaving && !showSuccess,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color(0xFF34C759),
+                                    checkedTrackColor = Color(0xFF34C759).copy(alpha = 0.3f),
+                                    uncheckedThumbColor = Color(0xFF8E8E93),
+                                    uncheckedTrackColor = Color(0xFF8E8E93).copy(alpha = 0.3f)
+                                )
+                            )
+                        }
+                    }
+
+                    // Face Registration Button (Only show if toggle is OFF)
+                    if (!hasAlreadyRegisteredFace) {
+                        OutlinedButton(
+                            onClick = {
+                                keyboardController?.hide()
+
+                                // Validation for face registration
+                                when {
+                                    nameInput.isBlank() -> {
+                                        showError = "Please enter your full name first"
+                                        return@OutlinedButton
+                                    }
+                                    rollNumberInput.isBlank() -> {
+                                        showError = "Please enter your roll number first"
+                                        return@OutlinedButton
+                                    }
+                                    rollNumberInput.length < 4 -> {
+                                        showError = "Roll number must be at least 4 characters"
+                                        return@OutlinedButton
+                                    }
+                                    else -> {
+                                        showError = null
+                                        Timber.d("Starting face registration for: ${rollNumberInput}")
+                                        showFaceRegistration = true
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            enabled = !isSaving && !showSuccess && !faceRegistrationCompleted,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = if (faceRegistrationCompleted) Color(0xFF34C759) else Color(0xFF007AFF)
+                            )
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = if (faceRegistrationCompleted) "✅" else "📷",
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text(
+                                    text = if (faceRegistrationCompleted) "Face Registered" else "Register Face",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
 
                     // Sign In Button
                     Button(
@@ -268,9 +433,15 @@ fun LoginScreen(
                                     showError = "Please enter your class"
                                     return@Button
                                 }
+                                // NEW: Check face registration requirement
+                                !hasAlreadyRegisteredFace && !faceRegistrationCompleted -> {
+                                    showError = "Please complete face registration or toggle 'I have already registered my face'"
+                                    return@Button
+                                }
                                 else -> {
                                     showError = null
-                                    Timber.d("Login attempt: name='${nameInput}', roll='${rollNumberInput}', class='${classInput}'")
+                                    val registrationStatus = if (hasAlreadyRegisteredFace) "previously registered" else "newly registered"
+                                    Timber.d("Login attempt: name='${nameInput}', roll='${rollNumberInput}', class='${classInput}', faceStatus=$registrationStatus")
 
                                     // Save profile with class and proceed
                                     profileViewModel.saveProfileWithClass(
@@ -296,12 +467,7 @@ fun LoginScreen(
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (!isSaving && !showSuccess) {
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color(0xFF007AFF),
-                                        Color(0xFF5856D6)
-                                    )
-                                ).let { Color(0xFF007AFF) } // Fallback to blue
+                                Color(0xFF007AFF)
                             } else {
                                 Color(0xFF8E8E93)
                             },
@@ -340,13 +506,16 @@ fun LoginScreen(
                         }
                     }
 
-                    // Cancel Button
+                    // Clear Form Button
                     OutlinedButton(
                         onClick = {
                             keyboardController?.hide()
                             profileViewModel.updateNameInput("")
                             profileViewModel.updateRollNumberInput("")
                             classInput = ""
+                            faceRegistrationCompleted = false
+                            registeredFaceId = null
+                            hasAlreadyRegisteredFace = false
                             showError = null
                         },
                         modifier = Modifier
@@ -354,20 +523,12 @@ fun LoginScreen(
                             .height(50.dp),
                         enabled = !isSaving && !showSuccess,
                         shape = RoundedCornerShape(12.dp),
-                        colors = buttonColors(
+                        colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = Color(0xFF8E8E93)
-                        ),
-                        border = outlinedButtonBorder.copy(
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color(0xFF8E8E93),
-                                    Color(0xFF8E8E93)
-                                )
-                            )
                         )
                     ) {
                         Text(
-                            "Cancel",
+                            "Clear Form",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -395,7 +556,7 @@ fun LoginScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Manual login for development and testing purposes",
+                        text = "Face registration required only once per student",
                         color = Color.White.copy(alpha = 0.8f),
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center

@@ -246,7 +246,7 @@ fun SplashScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "A Humble Solutions Product",
+                    text = "Thapar Institute of Engineering & Technology",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White.copy(alpha = 0.9f),
