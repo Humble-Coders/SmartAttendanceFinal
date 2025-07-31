@@ -159,7 +159,7 @@ class FirebaseRepository {
     ): Result<AttendanceResponse> {
         return try {
             Timber.d("🚀 Starting Firebase attendance marking process (isExtra: $isExtra)")
-            Timber.d("📋 Details: $rollNumber, $subject, $group, $type")
+            Timber.d("📋 Details: $rollNumber, $subject, $group, $type , $deviceRoom, isExtra: $isExtra")
 
             val today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 

@@ -271,7 +271,7 @@ private fun getFaceIoAuthHtml(): String {
                     setTimeout(function() {
                         try {
                             log('🔧 Creating faceIO instance...');
-                            faceio = new faceIO('fioa264a');
+                            faceio = new faceIO('fioa3e64');
                             log('✅ Face.io initialized successfully');
                             
                             statusDiv.innerHTML = 'Face.io ready. Click button to scan face.';
@@ -370,26 +370,58 @@ private fun getFaceIoAuthHtml(): String {
                 }
                 
                 function handleError(errCode) {
-                    const errorMessages = {
-                        1: "Camera permission denied",
-                        2: "No face detected. Please position your face in the camera",
-                        3: "Face not recognized. Please register first",
-                        4: "Multiple faces detected. Please ensure only one face is visible",
-                        5: "Face spoofing detected",
-                        7: "Network error. Please check your connection",
-                        8: "Wrong PIN code",
-                        9: "Processing error. Please try again",
-                        10: "Unauthorized. Please check application settings",
-                        11: "Terms not accepted",
-                        12: "UI not ready. Please refresh and try again",
-                        13: "Session expired. Please try again",
-                        14: "Operation timed out. Please try again",
-                        15: "Too many requests. Please wait a moment"
-                    };
-                    
-                    log('📋 Face.io error code: ' + errCode);
-                    return errorMessages[errCode] || "Unknown error occurred (Code: " + errCode + ")";
-                }
+    console.log("=== RECEIVED ERROR CODE ===");
+    console.log("Error Code:", errCode);
+    console.log("Type:", typeof errCode);
+    console.log("========================");
+    
+    // Use the official switch statement from FACEIO boilerplate
+    switch (errCode) {
+        case fioErrCode.PERMISSION_REFUSED:
+            return "Access to the Camera stream was denied by the end user";
+        case fioErrCode.NO_FACES_DETECTED:
+            return "No faces were detected during the enroll or authentication process";
+        case fioErrCode.UNRECOGNIZED_FACE:
+            return "Unrecognized face on this application's Facial Index";
+        case fioErrCode.MANY_FACES:
+            return "Two or more faces were detected during the scan process";
+        case fioErrCode.FACE_DUPLICATION:
+            return "User enrolled previously (facial features already recorded). Cannot enroll again!";
+        case fioErrCode.MINORS_NOT_ALLOWED:
+            return "Minors are not allowed to enroll on this application!";
+        case fioErrCode.PAD_ATTACK:
+            return "Presentation (Spoof) Attack (PAD) detected during the scan process";
+        case fioErrCode.FACE_MISMATCH:
+            return "Calculated Facial Vectors of the user being enrolled do not matches";
+        case fioErrCode.WRONG_PIN_CODE:
+            return "Wrong PIN code supplied by the user being authenticated";
+        case fioErrCode.PROCESSING_ERR:
+            return "Server side error";
+        case fioErrCode.UNAUTHORIZED:
+            return "Your application is not allowed to perform the requested operation";
+        case fioErrCode.TERMS_NOT_ACCEPTED:
+            return "Terms & Conditions rejected by the end user";
+        case fioErrCode.UI_NOT_READY:
+            return "The FACEIO Widget could not be injected onto the client DOM";
+        case fioErrCode.SESSION_EXPIRED:
+            return "Client session expired";
+        case fioErrCode.TIMEOUT:
+            return "Ongoing operation timed out";
+        case fioErrCode.TOO_MANY_REQUESTS:
+            return "Widget instantiation requests exceeded for freemium applications";
+        case fioErrCode.EMPTY_ORIGIN:
+            return "Origin or Referer HTTP request header is empty or missing";
+        case fioErrCode.FORBIDDDEN_ORIGIN:
+            return "Domain origin is forbidden from instantiating fio.js";
+        case fioErrCode.FORBIDDDEN_COUNTRY:
+            return "Country ISO-3166-1 Code is forbidden from instantiating fio.js";
+        case fioErrCode.SESSION_IN_PROGRESS:
+            return "Another authentication or enrollment session is in progress";
+        case fioErrCode.NETWORK_IO:
+        default:
+            return "Error while establishing network connection with the target FACEIO processing node";
+    }
+}
             </script>
         </body>
         </html>

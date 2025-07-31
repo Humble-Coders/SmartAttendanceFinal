@@ -33,6 +33,22 @@ class BleViewModel(
     }
 
     /**
+     * Debug method to log current detection state
+     */
+    fun logCurrentDetectionState() {
+        val deviceRoom = detectedDeviceRoom.value
+        val subjectCode = detectedSubjectCode.value
+        val roomName = getDetectedRoomName()
+
+        Timber.d("📡 BLE Detection State:")
+        Timber.d("   Device Room: '$deviceRoom'")
+        Timber.d("   Subject Code: '$subjectCode'")
+        Timber.d("   Room Name: '$roomName'")
+        Timber.d("   Device Found: ${deviceFound.value}")
+        Timber.d("   BLE State: ${bleState.value}")
+    }
+
+    /**
      * Start scanning for specific room
      */
     fun startScanningForRoom(roomName: String) {
