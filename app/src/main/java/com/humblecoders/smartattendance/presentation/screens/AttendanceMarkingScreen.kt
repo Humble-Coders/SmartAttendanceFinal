@@ -173,7 +173,7 @@ fun AttendanceMarkingScreen(
         val isExtra = session.isExtra
 
         // Use captured device room instead of current detected device room
-        val currentDetectedDeviceRoom = capturedDeviceRoom ?: ""
+        val currentDetectedDeviceRoom =attendanceViewModel.deviceRoom
 
         Timber.d("🎯 Starting final attendance marking (post Face.io auth)")
         Timber.d("📋 Authenticated roll number: $rollNumber")
@@ -182,7 +182,7 @@ fun AttendanceMarkingScreen(
 
         attendanceViewModel.markAttendanceAfterAuth(
             rollNumber = rollNumber,
-            deviceRoom = currentDetectedDeviceRoom, // Use captured value
+            deviceRoom = currentDetectedDeviceRoom.toString(), // Use captured value
             isExtra = isExtra,
             onSuccess = {
                 Timber.i("🎉 Attendance marked successfully after Face.io auth!")
@@ -193,7 +193,7 @@ fun AttendanceMarkingScreen(
                     subject = session.subject,
                     room = session.room,
                     type = session.type,
-                    deviceRoom = currentDetectedDeviceRoom, // Use captured value
+                    deviceRoom = currentDetectedDeviceRoom.toString(), // Use captured value
                     attendanceId = "att_${System.currentTimeMillis()}"
                 )
 

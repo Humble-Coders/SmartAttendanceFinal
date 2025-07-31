@@ -50,6 +50,8 @@ class AttendanceViewModel(
     private val _autoScanEnabled = MutableStateFlow(true)
     val autoScanEnabled: StateFlow<Boolean> = _autoScanEnabled.asStateFlow()
 
+    var deviceRoom: String? = null
+
     /**
      * NEW: Validate attendance before Face.io authentication
      * This performs all checks except roll number verification

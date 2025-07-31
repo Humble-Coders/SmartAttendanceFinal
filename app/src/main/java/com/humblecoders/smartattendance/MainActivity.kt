@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var bluetoothManager: BluetoothManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         // Install and immediately dismiss splash screen
         val splashScreen = installSplashScreen()
         splashScreen.setKeepOnScreenCondition { false }

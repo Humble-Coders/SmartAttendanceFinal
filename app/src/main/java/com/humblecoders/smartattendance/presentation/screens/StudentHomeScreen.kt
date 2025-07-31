@@ -1,5 +1,6 @@
 package com.humblecoders.smartattendance.presentation.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -1060,6 +1061,9 @@ fun StudentHomeScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+    Log.d("StudentHomeScreen","Current Room: $currentRoom")
+    attendanceViewModel.deviceRoom=currentRoom
+
 
     // Overlay Manager - handles all overlay states
     AttendanceOverlayManager(
