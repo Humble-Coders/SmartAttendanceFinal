@@ -37,6 +37,8 @@ fun AttendanceMarkingScreen(
     val currentSession by attendanceViewModel.currentSession.collectAsState()
     val detectedDeviceRoom by bleViewModel.detectedDeviceRoom.collectAsState()
     val preservedDeviceRoom by attendanceViewModel.preservedDeviceRoom.collectAsState()
+    val isFaceRecognitionEnabled by attendanceViewModel.isFaceRecognitionEnabled.collectAsState()
+
 
     // ADD: Capture device room in local state to preserve it
     var capturedDeviceRoom by remember { mutableStateOf(presetDeviceRoom.ifBlank { detectedDeviceRoom }) }
@@ -87,6 +89,51 @@ fun AttendanceMarkingScreen(
         }
     }
 
+
+    fun markAttendanceDirectly() {
+        if (isProcessingAttendance) {
+            Timber.w("⚠️ Attendance already being processed, ignoring duplicate request")
+            return
+        }
+
+        val session = currentSession!!
+        isProcessingAttendance = true
+        val isExtra = session.isExtra
+        val currentDetectedDeviceRoom = attendanceViewModel.deviceRoom
+
+        Timber.d("🎯 Marking attendance directly (no face recognition)")
+        Timber.d("📋 Student: ${profileData.name} (${profileData.rollNumber})")
+        Timber.d("📡 Using Device room: '$currentDetectedDeviceRoom'")
+
+        attendanceViewModel.markAttendanceAfterAuth(
+            rollNumber = profileData.rollNumber,
+            deviceRoom = currentDetectedDeviceRoom.toString(),
+            isExtra = isExtra,
+            onSuccess = {
+                Timber.i("🎉 Attendance marked successfully (direct)!")
+
+                val successData = AttendanceSuccessData(
+                    rollNumber = profileData.rollNumber,
+                    studentName = profileData.name,
+                    subject = session.subject,
+                    room = session.room,
+                    type = session.type,
+                    deviceRoom = currentDetectedDeviceRoom.toString(),
+                    attendanceId = "att_${System.currentTimeMillis()}"
+                )
+
+                isProcessingAttendance = false
+                onNavigateToSuccess(successData)
+            },
+            onError = { error ->
+                Timber.e("❌ Direct attendance marking failed: $error")
+                errorMessage = error
+                isProcessingAttendance = false
+            }
+        )
+    }
+
+    // Replace the existing performAttendanceValidation function
     fun performAttendanceValidation() {
         val session = currentSession
         if (session == null) {
@@ -106,19 +153,22 @@ fun AttendanceMarkingScreen(
         val attendanceType = if (isExtra) "extra" else "regular"
 
         Timber.d("🔍 Starting pre-authentication attendance validation")
-        Timber.d("📋 Student: ${profileData.name} (${profileData.rollNumber}) from ${profileData.className}")
-        Timber.d("📚 Session: ${session.subject} in ${session.room} (${session.type}) - Extra: ${session.isExtra}")
-        Timber.d("📡 Current Device Room: $detectedDeviceRoom") // This will be null
-        Timber.d("📡 Captured Device Room: $capturedDeviceRoom") // This should have the value
+        Timber.d("🔧 Face recognition enabled: $isFaceRecognitionEnabled")
 
         attendanceViewModel.validateAttendanceBeforeAuth(
             rollNumber = profileData.rollNumber,
-            deviceRoom = capturedDeviceRoom ?: "", // Use captured device room
+            deviceRoom = capturedDeviceRoom ?: "",
             isExtra = isExtra,
             onSuccess = {
                 Timber.i("✅ $attendanceType attendance validation successful")
                 attendanceValidated = true
                 isValidatingAttendance = false
+
+                // If face recognition is disabled, mark attendance directly
+                if (isFaceRecognitionEnabled == false) {
+                    Timber.d("🚀 Face recognition disabled, marking attendance directly")
+                    markAttendanceDirectly()
+                }
             },
             onError = { error ->
                 Timber.e("❌ $attendanceType attendance validation failed: $error")
@@ -126,12 +176,14 @@ fun AttendanceMarkingScreen(
                 isValidatingAttendance = false
             },
             onStopScanning = {
-                // Stop BLE scanning when validation fails
                 Timber.d("🛑 Stopping BLE scanning due to validation failure")
                 bleViewModel.stopScanning()
             }
         )
     }
+
+    // Add this new function to mark attendance without face recognition
+
 
     // Handle camera permission
     CameraPermissionHandler(
@@ -147,13 +199,17 @@ fun AttendanceMarkingScreen(
     )
 
     // NEW: Perform attendance validation when camera permission is granted
-    LaunchedEffect(hasCameraPermission) {
-        if (hasCameraPermission && !attendanceValidated && !isValidatingAttendance) {
-            Timber.d("📡 Device room before validation: Current=$detectedDeviceRoom, Captured=$capturedDeviceRoom")
+    // Update this LaunchedEffect
+    LaunchedEffect(hasCameraPermission, isFaceRecognitionEnabled) {
+        if (isFaceRecognitionEnabled == false) {
+            // Skip camera permission for direct attendance
+            if (!attendanceValidated && !isValidatingAttendance) {
+                performAttendanceValidation()
+            }
+        } else if (isFaceRecognitionEnabled == true && hasCameraPermission && !attendanceValidated && !isValidatingAttendance) {
             performAttendanceValidation()
         }
     }
-
     // Function to mark attendance with roll number validation only
     fun markAttendanceWithRollNumber(rollNumber: String) {
         if (isProcessingAttendance) {
@@ -243,81 +299,64 @@ fun AttendanceMarkingScreen(
                 .padding(paddingValues)
         ) {
             when {
-                permissionDenied -> {
-                    Timber.d("🎬 Showing permission denied content")
+                isFaceRecognitionEnabled == null -> {
+                    LoadingContent(message = "Loading configuration...")
+                }
+
+                permissionDenied && isFaceRecognitionEnabled == true -> {
                     PermissionDeniedContent(
-                        onCancel = {
-                            Timber.d("🔙 User cancelled due to permission denial")
-                            onNavigateBack()
-                        },
+                        onCancel = { stopScanningAndNavigateBack() },
                         bleViewModel = bleViewModel,
-                        onNavigateBack = {
-                            Timber.d("🔙 User clicked back from permission denied screen")
-                            // Stop scanning before navigating back
-                            bleViewModel.stopScanning()
-                            bleViewModel.resetDeviceFound()
-                            onNavigateBack()
-                        },
+                        onNavigateBack = { stopScanningAndNavigateBack() },
                         attendanceViewModel = attendanceViewModel
                     )
                 }
 
-                !hasCameraPermission -> {
-                    Timber.d("🎬 Waiting for camera permission")
+                !hasCameraPermission && isFaceRecognitionEnabled == true -> {
                     LoadingContent(message = "Requesting camera permission...")
                 }
 
                 isValidatingAttendance -> {
-                    Timber.d("🎬 Showing attendance validation content")
                     LoadingContent(message = "Validating attendance eligibility...")
                 }
 
                 errorMessage != null -> {
-                    Timber.d("🎬 Showing error content: $errorMessage")
                     AttendanceErrorContent(
                         errorMessage = errorMessage!!,
                         onRetry = {
-                            Timber.d("🔄 User retrying after error")
                             errorMessage = null
                             attendanceValidated = false
-                            if (hasCameraPermission) {
+                            if (isFaceRecognitionEnabled == true && hasCameraPermission) {
+                                performAttendanceValidation()
+                            } else if (isFaceRecognitionEnabled == false) {
                                 performAttendanceValidation()
                             }
                         },
-                        onCancel = {
-                            Timber.d("🔙 User cancelled after error")
-                            // Stop scanning before navigating back
-                            attendanceViewModel.disableAutoScan()
-                            bleViewModel.stopScanning()
-                            bleViewModel.resetDeviceFound()
-                            onNavigateBack()
-                        }
+                        onCancel = { stopScanningAndNavigateBack() }
                     )
                 }
 
                 isProcessingAttendance -> {
-                    Timber.d("🎬 Showing processing content")
                     ProcessingAttendanceContent()
                 }
 
                 !attendanceValidated -> {
-                    Timber.d("🎬 Waiting for attendance validation")
                     LoadingContent(message = "Preparing authentication...")
                 }
 
+                isFaceRecognitionEnabled == false -> {
+                    // This case is handled in performAttendanceValidation
+                    LoadingContent(message = "Processing attendance...")
+                }
+
                 else -> {
-                    Timber.d("🎬 Showing Face.io authentication WebView")
+                    // Only show Face.io WebView if face recognition is enabled
                     FaceIoAuthWebView(
                         modifier = Modifier.fillMaxSize(),
                         onAuthenticated = { rollNumber ->
-                            Timber.d("🔥 WEBVIEW CALLBACK TRIGGERED!")
-                            Timber.d("🆔 Authenticated roll number: $rollNumber")
-                            Timber.d("📡 Current Device Room: $detectedDeviceRoom")
-                            Timber.d("📡 Captured Device Room: $capturedDeviceRoom")
                             markAttendanceWithRollNumber(rollNumber)
                         },
                         onError = { error ->
-                            Timber.e("❌ WebView authentication error: $error")
                             errorMessage = "Face authentication failed: $error"
                         }
                     )
@@ -537,3 +576,4 @@ private fun AttendanceErrorContent(
         }
     }
 }
+

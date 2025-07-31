@@ -1,5 +1,6 @@
 package com.humblecoders.smartattendance.presentation.viewmodel
 
+import com.humblecoders.smartattendance.data.repository.AdminToggleRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.humblecoders.smartattendance.data.repository.AttendanceRepository
@@ -17,8 +18,12 @@ import timber.log.Timber
 
 class AttendanceViewModel(
     private val attendanceRepository: AttendanceRepository,
-    private val profileRepository: ProfileRepository
+    private val profileRepository: ProfileRepository,
+    private val adminToggleRepository: AdminToggleRepository
 ) : ViewModel() {
+
+    private val _isFaceRecognitionEnabled = MutableStateFlow<Boolean?>(null)
+    val isFaceRecognitionEnabled: StateFlow<Boolean?> = _isFaceRecognitionEnabled.asStateFlow()
 
     // UI State
     private val _isLoading = MutableStateFlow(false)
@@ -73,6 +78,17 @@ class AttendanceViewModel(
     fun clearPreservedDeviceRoom() {
         _preservedDeviceRoom.value = null
         Timber.d("📡 Preserved device room cleared")
+    }
+
+    suspend fun checkFaceRecognitionToggle() {
+        try {
+            val isEnabled = adminToggleRepository.isFaceRecognitionEnabled()
+            _isFaceRecognitionEnabled.value = isEnabled
+            Timber.d("🔧 Face recognition enabled: $isEnabled")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to check face recognition toggle")
+            _isFaceRecognitionEnabled.value = true // Default to enabled
+        }
     }
 
     // Change from private to public:
