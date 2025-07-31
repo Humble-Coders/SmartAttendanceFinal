@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.ConstraintSet
 import androidx.constraintlayout.compose.Dimension
+import com.humblecoders.smartattendance.presentation.viewmodel.AttendanceViewModel
 import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import kotlinx.coroutines.delay
 import timber.log.Timber
@@ -31,7 +32,8 @@ import timber.log.Timber
 fun SplashScreen(
     profileViewModel: ProfileViewModel,
     onNavigateToLogin: () -> Unit,
-    onNavigateToHome: () -> Unit
+    onNavigateToHome: () -> Unit,
+    attendanceViewModel: AttendanceViewModel
 ) {
     var titleOpacity by remember { mutableStateOf(0f) }
     var loadingOpacity by remember { mutableStateOf(0f) }
@@ -74,8 +76,12 @@ fun SplashScreen(
         label = "brandingOpacity"
     )
 
-    // Start animations
+// In your splash screen's LaunchedEffect or initialization
+
+
+            // Start animations
     LaunchedEffect(Unit) {
+
         // Display icon in center
         delay(500)
 
@@ -94,6 +100,8 @@ fun SplashScreen(
         // Show branding
         brandingOpacity = 1f
         delay(1500)
+        attendanceViewModel.checkFaceRecognitionToggle()
+
 
         // Navigate after animations complete
         checkProfileAndNavigate(profileData, onNavigateToLogin, onNavigateToHome)

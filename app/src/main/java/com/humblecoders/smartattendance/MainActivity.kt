@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.google.firebase.FirebaseApp
+import com.humblecoders.smartattendance.data.repository.AdminToggleRepository
 import com.humblecoders.smartattendance.data.repository.AttendanceRepository
 import com.humblecoders.smartattendance.data.repository.BleRepository
 import com.humblecoders.smartattendance.data.repository.ProfileRepository
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var bleRepository: BleRepository
     private lateinit var profileRepository: ProfileRepository
     private lateinit var attendanceRepository: AttendanceRepository
+    private lateinit var adminToggleRepository: AdminToggleRepository
 
     // Late init ViewModels
     lateinit var bleViewModel: BleViewModel
@@ -110,6 +112,7 @@ class MainActivity : ComponentActivity() {
             bleRepository = BleRepository(applicationContext)
             profileRepository = ProfileRepository(applicationContext)
             attendanceRepository = AttendanceRepository()
+            adminToggleRepository = AdminToggleRepository()
 
             Timber.d("📦 All repositories initialized successfully")
         } catch (e: Exception) {
@@ -121,7 +124,7 @@ class MainActivity : ComponentActivity() {
         try {
             bleViewModel = BleViewModel(bleRepository)
             profileViewModel = ProfileViewModel(profileRepository)
-            attendanceViewModel = AttendanceViewModel(attendanceRepository, profileRepository)
+            attendanceViewModel = AttendanceViewModel(attendanceRepository, profileRepository, adminToggleRepository)
 
             Timber.d("🎭 All ViewModels initialized successfully")
         } catch (e: Exception) {
