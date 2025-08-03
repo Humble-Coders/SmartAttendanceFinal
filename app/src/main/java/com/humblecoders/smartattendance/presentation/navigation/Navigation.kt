@@ -13,6 +13,8 @@ import com.humblecoders.smartattendance.presentation.viewmodel.ProfileViewModel
 import com.humblecoders.smartattendance.data.model.AttendanceSuccessData
 import com.humblecoders.smartattendance.utils.BluetoothManager
 import timber.log.Timber
+import java.net.URLDecoder
+import java.net.URLEncoder
 
 @Composable
 fun AppNavigation(
@@ -64,7 +66,8 @@ fun AppNavigation(
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
-                }
+                },
+                attendanceViewModel = attendanceViewModel,
             )
         }
 
@@ -115,7 +118,7 @@ fun AppNavigation(
                 )
         ) {
                 backStackEntry ->
-            val deviceRoom = java.net.URLDecoder.decode(
+            val deviceRoom = URLDecoder.decode(
                 backStackEntry.arguments?.getString("deviceRoom") ?: "",
                 "UTF-8"
             ).let { if (it == "unknown") "" else it }
@@ -158,7 +161,7 @@ fun AppNavigation(
                 }
             )
         ) { backStackEntry ->
-            val rollNumber = java.net.URLDecoder.decode(
+            val rollNumber = URLDecoder.decode(
                 backStackEntry.arguments?.getString("rollNumber") ?: "",
                 "UTF-8"
             )
@@ -213,27 +216,27 @@ fun AppNavigation(
                 }
             )
         ) { backStackEntry ->
-            val rollNumber = java.net.URLDecoder.decode(
+            val rollNumber = URLDecoder.decode(
                 backStackEntry.arguments?.getString("rollNumber") ?: "unknown",
                 "UTF-8"
             )
-            val subject = java.net.URLDecoder.decode(
+            val subject = URLDecoder.decode(
                 backStackEntry.arguments?.getString("subject") ?: "unknown",
                 "UTF-8"
             )
-            val room = java.net.URLDecoder.decode(
+            val room = URLDecoder.decode(
                 backStackEntry.arguments?.getString("room") ?: "unknown",
                 "UTF-8"
             )
-            val type = java.net.URLDecoder.decode(
+            val type = URLDecoder.decode(
                 backStackEntry.arguments?.getString("type") ?: "unknown",
                 "UTF-8"
             )
-            val deviceRoom = java.net.URLDecoder.decode(
+            val deviceRoom = URLDecoder.decode(
                 backStackEntry.arguments?.getString("deviceRoom") ?: "unknown",
                 "UTF-8"
             )
-            val attendanceId = java.net.URLDecoder.decode(
+            val attendanceId = URLDecoder.decode(
                 backStackEntry.arguments?.getString("attendanceId") ?: "unknown",
                 "UTF-8"
             )
@@ -267,7 +270,7 @@ sealed class Screen(val route: String) {
     // In Screen sealed class, update AttendanceMarking to accept device room
     object AttendanceMarking : Screen("attendance_marking/{deviceRoom}") {
         fun createRoute(deviceRoom: String = ""): String {
-            val encodedDeviceRoom = java.net.URLEncoder.encode(deviceRoom.ifBlank { "unknown" }, "UTF-8")
+            val encodedDeviceRoom = URLEncoder.encode(deviceRoom.ifBlank { "unknown" }, "UTF-8")
             return "attendance_marking/$encodedDeviceRoom"
         }
     }
@@ -282,19 +285,19 @@ sealed class Screen(val route: String) {
             deviceRoom: String,
             attendanceId: String
         ): String {
-            val encodedRollNumber = java.net.URLEncoder.encode(rollNumber.ifBlank { "unknown" }, "UTF-8")
-            val encodedSubject = java.net.URLEncoder.encode(subject.ifBlank { "unknown" }, "UTF-8")
-            val encodedRoom = java.net.URLEncoder.encode(room.ifBlank { "unknown" }, "UTF-8")
-            val encodedType = java.net.URLEncoder.encode(type.ifBlank { "unknown" }, "UTF-8")
-            val encodedDeviceRoom = java.net.URLEncoder.encode(deviceRoom.ifBlank { "unknown" }, "UTF-8")
-            val encodedAttendanceId = java.net.URLEncoder.encode(attendanceId.ifBlank { "unknown" }, "UTF-8")
+            val encodedRollNumber = URLEncoder.encode(rollNumber.ifBlank { "unknown" }, "UTF-8")
+            val encodedSubject = URLEncoder.encode(subject.ifBlank { "unknown" }, "UTF-8")
+            val encodedRoom = URLEncoder.encode(room.ifBlank { "unknown" }, "UTF-8")
+            val encodedType = URLEncoder.encode(type.ifBlank { "unknown" }, "UTF-8")
+            val encodedDeviceRoom = URLEncoder.encode(deviceRoom.ifBlank { "unknown" }, "UTF-8")
+            val encodedAttendanceId = URLEncoder.encode(attendanceId.ifBlank { "unknown" }, "UTF-8")
 
             return "attendance_success/$encodedRollNumber/$encodedSubject/$encodedRoom/$encodedType/$encodedDeviceRoom/$encodedAttendanceId"
         }
     }
     object FaceRegistration : Screen("face_registration/{rollNumber}") {
         fun createRoute(rollNumber: String): String {
-            return "face_registration/${java.net.URLEncoder.encode(rollNumber, "UTF-8")}"
+            return "face_registration/${URLEncoder.encode(rollNumber, "UTF-8")}"
         }
     }
 }

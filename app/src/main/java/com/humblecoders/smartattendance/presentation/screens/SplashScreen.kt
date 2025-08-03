@@ -180,7 +180,7 @@ fun SplashScreen(
 
             // Title
             Text(
-                text = "Smart Attend",
+                text = "AttendX",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,

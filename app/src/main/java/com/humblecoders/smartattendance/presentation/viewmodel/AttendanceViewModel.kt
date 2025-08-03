@@ -561,67 +561,6 @@ class AttendanceViewModel(
         }
     }
 
-    fun checkActiveSession(onResult: (SessionCheckResult) -> Unit = {}) {
-        viewModelScope.launch {
-            _isCheckingSession.value = true
-
-            try {
-                Timber.d("🔍 AttendanceViewModel: Checking active session")
-
-                val profileData = profileRepository.profileData.first()
-                val className = profileData.className
-
-                if (className.isBlank()) {
-                    Timber.w("⚠️ No class name available in profile")
-                    val result = SessionCheckResult(
-                        isActive = false,
-                        message = "No class information available"
-                    )
-                    _isSessionActive.value = false
-                    _currentSession.value = null
-                    onResult(result)
-                    return@launch
-                }
-
-                Timber.d("📋 Checking session for class: $className")
-                val result = attendanceRepository.checkActiveSession(className)
-
-                if (result.isSuccess) {
-                    val sessionResult = result.getOrNull()!!
-                    _isSessionActive.value = sessionResult.isActive
-                    _currentSession.value = sessionResult.session
-
-                    Timber.d("✅ Session check completed: isActive=${sessionResult.isActive}")
-                    if (sessionResult.isActive && sessionResult.session != null) {
-                        Timber.d("📚 Active session details: ${sessionResult.session}")
-                    }
-
-                    onResult(sessionResult)
-                } else {
-                    Timber.e("❌ Failed to check session: ${result.exceptionOrNull()}")
-                    val errorResult = SessionCheckResult(
-                        isActive = false,
-                        message = "Failed to check session status"
-                    )
-                    _isSessionActive.value = false
-                    _currentSession.value = null
-                    onResult(errorResult)
-                }
-
-            } catch (e: Exception) {
-                Timber.e(e, "💥 Error checking active session")
-                val errorResult = SessionCheckResult(
-                    isActive = false,
-                    message = "Error checking session: ${e.message}"
-                )
-                _isSessionActive.value = false
-                _currentSession.value = null
-                onResult(errorResult)
-            } finally {
-                _isCheckingSession.value = false
-            }
-        }
-    }
 
     /**
      * Mark attendance as completed for today's session
@@ -752,4 +691,153 @@ class AttendanceViewModel(
             }
         }
     }
+
+    // 1. In AttendanceViewModel.kt - Add a new method to check if attendance is already marked for current session
+
+    fun checkAttendanceForCurrentSession(
+        rollNumber: String,
+        onResult: (Boolean) -> Unit // true if already marked, false if not marked
+    ) {
+        viewModelScope.launch {
+            try {
+                val session = _currentSession.value
+                if (session == null) {
+                    onResult(false)
+                    return@launch
+                }
+
+                val profileData = profileRepository.profileData.first()
+                val className = profileData.className
+
+                if (className.isBlank()) {
+                    onResult(false)
+                    return@launch
+                }
+
+                Timber.d("🔍 Checking if attendance already marked for current session")
+                Timber.d("📋 Session: ${session.subject}, Room: ${session.room}, Type: ${session.type}, IsExtra: ${session.isExtra}")
+
+                // Use existing repository method to check if attendance is already marked
+                val result = attendanceRepository.validateAttendanceEligibility(
+                    rollNumber = rollNumber,
+                    subject = session.subject,
+                    group = className,
+                    type = session.type,
+                    isExtra = session.isExtra
+                )
+
+                if (result.isSuccess) {
+                    val eligibility = result.getOrNull()!!
+                    // If not eligible due to already marked, then attendance is already marked
+                    val alreadyMarked = !eligibility.isEligible && eligibility.alreadyMarked
+
+                    Timber.d("✅ Attendance check result: alreadyMarked=$alreadyMarked")
+                    onResult(alreadyMarked)
+
+                    // Update the attendance completion state
+                    _isAttendanceCompletedToday.value = alreadyMarked
+                } else {
+                    Timber.e("❌ Failed to check attendance eligibility: ${result.exceptionOrNull()}")
+                    onResult(false)
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Error checking attendance for current session")
+                onResult(false)
+            }
+        }
+    }
+
+    // 2. In AttendanceViewModel.kt - Update the checkActiveSession method to also check attendance
+
+    fun checkActiveSession(onResult: (SessionCheckResult) -> Unit = {}) {
+        viewModelScope.launch {
+            _isCheckingSession.value = true
+
+            try {
+                Timber.d("🔍 AttendanceViewModel: Checking active session")
+
+                val profileData = profileRepository.profileData.first()
+                val className = profileData.className
+                val rollNumber = profileData.rollNumber
+
+                if (className.isBlank()) {
+                    Timber.w("⚠️ No class name available in profile")
+                    val result = SessionCheckResult(
+                        isActive = false,
+                        message = "No class information available"
+                    )
+                    _isSessionActive.value = false
+                    _currentSession.value = null
+                    onResult(result)
+                    return@launch
+                }
+
+                Timber.d("📋 Checking session for class: $className")
+                val result = attendanceRepository.checkActiveSession(className)
+
+                if (result.isSuccess) {
+                    val sessionResult = result.getOrNull()!!
+                    _isSessionActive.value = sessionResult.isActive
+                    _currentSession.value = sessionResult.session
+
+                    Timber.d("✅ Session check completed: isActive=${sessionResult.isActive}")
+
+                    if (sessionResult.isActive && sessionResult.session != null) {
+                        Timber.d("📚 Active session details: ${sessionResult.session}")
+
+                        // NEW: Check if attendance is already marked for this session
+                        if (rollNumber.isNotBlank()) {
+                            checkAttendanceForCurrentSession(rollNumber) { alreadyMarked ->
+                                if (alreadyMarked) {
+                                    Timber.d("✅ Attendance already marked for current session")
+                                    // Update the session result message
+                                    val updatedResult = SessionCheckResult(
+                                        isActive = true,
+                                        session = sessionResult.session,
+                                        message = "Active session - Attendance already marked"
+                                    )
+                                    onResult(updatedResult)
+                                } else {
+                                    Timber.d("⏳ Attendance not yet marked for current session")
+                                    val updatedResult = SessionCheckResult(
+                                        isActive = true,
+                                        session = sessionResult.session,
+                                        message = "Active session - Attendance pending"
+                                    )
+                                    onResult(updatedResult)
+                                }
+                            }
+                        } else {
+                            onResult(sessionResult)
+                        }
+                    } else {
+                        onResult(sessionResult)
+                    }
+                } else {
+                    Timber.e("❌ Failed to check session: ${result.exceptionOrNull()}")
+                    val errorResult = SessionCheckResult(
+                        isActive = false,
+                        message = "Failed to check session status"
+                    )
+                    _isSessionActive.value = false
+                    _currentSession.value = null
+                    onResult(errorResult)
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "💥 Error checking active session")
+                val errorResult = SessionCheckResult(
+                    isActive = false,
+                    message = "Error checking session: ${e.message}"
+                )
+                _isSessionActive.value = false
+                _currentSession.value = null
+                onResult(errorResult)
+            } finally {
+                _isCheckingSession.value = false
+            }
+        }
+    }
+
 }

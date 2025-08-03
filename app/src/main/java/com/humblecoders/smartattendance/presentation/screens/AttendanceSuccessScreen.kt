@@ -117,36 +117,6 @@ fun AttendanceSuccessScreen(
                         lineHeight = 22.sp
                     )
 
-                    // NEW: BLE Scanning Status Info
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFF007AFF).copy(alpha = 0.1f)
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "📡",
-                                fontSize = 16.sp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "BLE scanning stopped automatically",
-                                fontSize = 14.sp,
-                                color = Color(0xFF007AFF),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-
                     // Details Card
                     Card(
                         modifier = Modifier.fillMaxWidth(),

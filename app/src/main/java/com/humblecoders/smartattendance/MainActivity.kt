@@ -4,13 +4,18 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
 import com.google.firebase.FirebaseApp
 import com.humblecoders.smartattendance.data.repository.AdminToggleRepository
 import com.humblecoders.smartattendance.data.repository.AttendanceRepository
@@ -42,7 +47,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var bluetoothManager: BluetoothManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
         // Install and immediately dismiss splash screen
         val splashScreen = installSplashScreen()
         splashScreen.setKeepOnScreenCondition { false }
@@ -54,6 +58,7 @@ class MainActivity : ComponentActivity() {
 
         // Enable edge-to-edge display
         enableEdgeToEdge()
+        
 
         // Initialize Firebase
         initializeFirebase()
@@ -72,6 +77,23 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SmartAttendanceTheme {
+                val isDarkMode = isSystemInDarkTheme()
+                LaunchedEffect(Unit) {
+                    try {
+                        val statusBarColor = if (isDarkMode) {
+                            Color(0xED062970).toArgb() // Dark background color
+                        } else {
+                            Color(0x955A9DEE).toArgb() // Your light mode color
+                        }
+
+                        window.statusBarColor = statusBarColor
+                        WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !isDarkMode
+
+                        Timber.d("🎨 Status bar color set in Compose - Dark mode: $isDarkMode")
+                    } catch (e: Exception) {
+                        Timber.e(e, "🎨 Failed to set status bar color in Compose")
+                    }
+                }
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
