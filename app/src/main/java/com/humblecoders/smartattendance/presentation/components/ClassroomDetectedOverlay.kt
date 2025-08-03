@@ -115,13 +115,7 @@ fun ClassroomDetectedOverlay(
                     }
 
                     // Status Message
-                    Text(
-                        text = "Starting face authentication...",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF007AFF),
-                        textAlign = TextAlign.Center
-                    )
+
 
                     // Success Indicator with Animation
                     Row(

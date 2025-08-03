@@ -185,18 +185,25 @@ fun AttendanceMarkingScreen(
     // Add this new function to mark attendance without face recognition
 
 
-    // Handle camera permission
-    CameraPermissionHandler(
-        onPermissionGranted = {
-            Timber.d("📷 Camera permission granted")
+    if (isFaceRecognitionEnabled == true) {
+        CameraPermissionHandler(
+            onPermissionGranted = {
+                Timber.d("📷 Camera permission granted")
+                hasCameraPermission = true
+                permissionDenied = false
+            },
+            onPermissionDenied = {
+                Timber.w("📷 Camera permission denied")
+                permissionDenied = true
+            }
+        )
+    } else if (isFaceRecognitionEnabled == false) {
+        // If face recognition is disabled, mark camera permission as granted
+        LaunchedEffect(Unit) {
             hasCameraPermission = true
             permissionDenied = false
-        },
-        onPermissionDenied = {
-            Timber.w("📷 Camera permission denied")
-            permissionDenied = true
         }
-    )
+    }
 
     // NEW: Perform attendance validation when camera permission is granted
     // Update this LaunchedEffect
@@ -268,7 +275,7 @@ fun AttendanceMarkingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Face Authentication") },
+                title = { if(isFaceRecognitionEnabled==true) Text("Face Authentication") else Text("Marking Attendance") },
                 navigationIcon = {
                     IconButton(
                         onClick = {

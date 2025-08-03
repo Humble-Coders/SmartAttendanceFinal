@@ -49,6 +49,8 @@ fun StudentHomeScreen(
     bluetoothManager: BluetoothManager, // ADD this parameter
 
 ) {
+    val isFaceRecognitionEnabled by attendanceViewModel.isFaceRecognitionEnabled.collectAsState()
+
     // Collect state from ViewModels
     val bleState by bleViewModel.bleState.collectAsState()
     val deviceFound by bleViewModel.deviceFound.collectAsState()
@@ -84,6 +86,19 @@ fun StudentHomeScreen(
     val isCheckingSessionVM by attendanceViewModel.isCheckingSession.collectAsState()
 
     val isAttendanceCompletedToday by attendanceViewModel.isAttendanceCompletedToday.collectAsState()
+
+    var refreshTimer by remember { mutableStateOf(0) }
+    var isRefreshEnabled by remember { mutableStateOf(true) }
+
+    // Timer countdown effect
+    LaunchedEffect(refreshTimer) {
+        if (refreshTimer > 0) {
+            kotlinx.coroutines.delay(1000)
+            refreshTimer -= 1
+        } else if (!isRefreshEnabled) {
+            isRefreshEnabled = true
+        }
+    }
 
 
 
@@ -164,12 +179,13 @@ fun StudentHomeScreen(
                     currentRoom = result.session!!.room
                     currentType = result.session!!.type
 
-                    // NEW: Reset attendance marked flag when session changes
+                    // Reset attendance marked flag when session changes
                     isAttendanceMarked = false
 
                     Timber.d("📋 Initial session check result: isActive=$isSessionActive")
                     if (isSessionActive) {
                         Timber.d("✅ Active session found: $currentSubject in $currentRoom")
+                        Timber.d("📝 Session message: ${result.message}") // This will show if attendance is already marked
                     } else {
                         Timber.d("⚪ No active session found")
                     }
@@ -373,28 +389,41 @@ fun StudentHomeScreen(
         )
     }
 
+    // Replace the existing Scaffold content in StudentHomeScreen.kt with this:
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        "Smart Attend",
-                        fontWeight = FontWeight.SemiBold
+                        "AttendX",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        color = Color(0xFF1D1D1F)
                     )
                 },
                 actions = {
                     IconButton(
                         onClick = { showLogoutDialog = true }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Logout",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF007AFF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profile",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFFF2F2F7)
+                    containerColor = Color(0xFFF8F9FA)
                 )
             )
         }
@@ -402,86 +431,75 @@ fun StudentHomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF2F2F7))
+                .background(Color(0xFFF8F9FA))
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Header Section
-            // Replace the existing Header Section Card with this:
-            // 1. UPDATED Header Section Card (with symmetrical layout):
+            // Welcome Card - Similar to the image
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left side - Text content
                     Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.weight(1f)
                     ) {
-                        // Welcome text
                         Text(
                             text = "Welcome back,",
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal,
                             color = Color(0xFF8E8E93),
-                            letterSpacing = 0.5.sp
+                            fontWeight = FontWeight.Normal
                         )
 
-                        // Student name
                         Text(
                             text = profileData.name,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1D1D1F),
-                            lineHeight = 26.sp
+                            color = Color(0xFF1D1D1F)
                         )
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        // Student details in symmetrical columns
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(24.dp)
+                            horizontalArrangement = Arrangement.spacedBy(32.dp)
                         ) {
-                            // Roll Number Column
                             Column {
                                 Text(
-                                    text = "Roll No",
+                                    text = "Roll Number",
                                     fontSize = 12.sp,
                                     color = Color(0xFF007AFF),
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
                                     text = profileData.rollNumber,
-                                    fontSize = 15.sp,
+                                    fontSize = 14.sp,
                                     color = Color(0xFF1D1D1F),
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
 
-                            // Class Column
                             Column {
                                 Text(
                                     text = "Class",
                                     fontSize = 12.sp,
-                                    color = Color(0xFF34C759),
+                                    color = Color(0xFFFF9500),
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
                                     text = profileData.className,
-                                    fontSize = 15.sp,
+                                    fontSize = 14.sp,
                                     color = Color(0xFF1D1D1F),
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -489,59 +507,33 @@ fun StudentHomeScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(20.dp))
-
-                    // Right side - Profile Avatar (same as before)
+                    // Profile Avatar
                     Box(
                         modifier = Modifier
-                            .size(72.dp)
+                            .size(64.dp)
                             .clip(CircleShape)
-                            .background(
-                                brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                                    colors = listOf(
-                                        Color(0xFF007AFF).copy(alpha = 0.1f),
-                                        Color(0xFF007AFF).copy(alpha = 0.05f)
-                                    )
-                                )
-                            ),
+                            .background(Color(0xFF007AFF)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(66.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF007AFF).copy(alpha = 0.08f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF007AFF).copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "Student Avatar",
-                                    modifier = Modifier.size(28.dp),
-                                    tint = Color(0xFF007AFF)
-                                )
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Profile Avatar",
+                            modifier = Modifier.size(32.dp),
+                            tint = Color.White
+                        )
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-
-// 2. UPDATED Session Status Card (remove settings icon, add icons, show type):
+            // Session Status Card - Redesigned
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Column(
@@ -549,93 +541,293 @@ fun StudentHomeScreen(
                         .fillMaxWidth()
                         .padding(20.dp)
                 ) {
+                    // Session Status Header
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Status Icon
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isSessionActive) Color(0xFF34C759)
-                                    else if (isCheckingSession) Color(0xFFFF9500)
-                                    else Color(0xFFFF3B30)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isSessionActive) Color(0xFF34C759).copy(alpha = 0.1f)
+                                        else Color(0xFF8E8E93).copy(alpha = 0.1f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Session Status",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (isSessionActive) Color(0xFF34C759) else Color(0xFF8E8E93)
                                 )
-                        )
+                            }
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
 
-                        Text(
-                            text = when {
-                                isCheckingSession -> "Checking Session..."
-                                isSessionActive -> "Active Session"
-                                else -> "No Active Session"
-                            },
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF1D1D1F)
-                        )
+                            Text(
+                                text = "Session Status",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1D1D1F)
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // ADD: Refresh Button with Timer
+                            IconButton(
+                                onClick = {
+                                    if (isRefreshEnabled && profileData.className.isNotBlank()) {
+                                        Timber.d("🔄 Session refresh button clicked")
+
+                                        // Start timer
+                                        isRefreshEnabled = false
+                                        refreshTimer = 10
+
+                                        // Reset session check state
+                                        hasCheckedInitialSession = false
+
+                                        // Check active session
+                                        attendanceViewModel.checkActiveSession { result ->
+                                            isSessionActive = result.isActive
+                                            if (result.session != null) {
+                                                currentSubject = result.session!!.subject
+                                                currentRoom = result.session!!.room
+                                                currentType = result.session!!.type
+
+                                                if (result.isActive) {
+                                                    Timber.d("✅ Refresh found active session: $currentSubject in $currentRoom")
+                                                } else {
+                                                    Timber.d("⚪ Refresh found no active session")
+                                                }
+                                            } else {
+                                                currentSubject = ""
+                                                currentRoom = ""
+                                                currentType = ""
+                                                Timber.d("⚪ No session data available")
+                                            }
+                                            hasCheckedInitialSession = true
+                                        }
+                                    }
+                                },
+                                enabled = isRefreshEnabled && !isCheckingSession,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                if (isCheckingSession) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        color = Color(0xFF007AFF),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else if (!isRefreshEnabled) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            progress = (10 - refreshTimer) / 10f,
+                                            modifier = Modifier.size(20.dp),
+                                            color = Color(0xFF8E8E93),
+                                            strokeWidth = 2.dp,
+                                            trackColor = Color(0xFF8E8E93).copy(alpha = 0.2f)
+                                        )
+                                        Text(
+                                            text = refreshTimer.toString(),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF8E8E93)
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh Session",
+                                        tint = Color(0xFF007AFF),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            // Status Badge
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isAttendanceCompletedToday) Color(0xFF34C759).copy(alpha = 0.1f)
+                                    else if (isSessionActive) Color(0xFF34C759).copy(alpha = 0.1f)
+                                    else Color(0xFF8E8E93).copy(alpha = 0.1f)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = when {
+                                        isAttendanceCompletedToday -> "Attended"
+                                        isSessionActive -> "Active"
+                                        else -> "Inactive"
+                                    },
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = when {
+                                        isAttendanceCompletedToday -> Color(0xFF34C759)
+                                        isSessionActive -> Color(0xFF34C759)
+                                        else -> Color(0xFF8E8E93)
+                                    }
+                                )
+                            }
+                        }
                     }
 
+                    Text(
+                        text = when {
+                            isAttendanceCompletedToday -> "Session active - Attendance already marked"
+                            isSessionActive -> "Session active - Ready for attendance"
+                            isCheckingSession -> "Checking session status..."
+                            else -> "No active session found"
+                        },
+                        fontSize = 14.sp,
+                        color = Color(0xFF8E8E93),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+
                     if (isSessionActive) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
+                        // Session Details
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Subject
                             Row(
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.MenuBook,
-                                    contentDescription = "Subject",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = Color(0xFF8E8E93)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MenuBook,
+                                        contentDescription = "Subject",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = Color(0xFF007AFF)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Subject",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF8E8E93)
+                                    )
+                                }
                                 Text(
-                                    text = "Subject: $currentSubject",
+                                    text = currentSubject,
                                     fontSize = 14.sp,
-                                    color = Color(0xFF8E8E93)
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1D1D1F)
                                 )
                             }
 
-                            // Room
                             Row(
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Room,
-                                    contentDescription = "Room",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = Color(0xFF8E8E93)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocationOn,
+                                        contentDescription = "Room",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = Color(0xFF007AFF)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Room",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF8E8E93)
+                                    )
+                                }
                                 Text(
-                                    text = "Room: $currentRoom",
+                                    text = currentRoom,
                                     fontSize = 14.sp,
-                                    color = Color(0xFF8E8E93)
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1D1D1F)
                                 )
                             }
 
-                            // Type
                             Row(
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Category,
-                                    contentDescription = "Type",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = Color(0xFF8E8E93)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Category,
+                                        contentDescription = "Type",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = Color(0xFF007AFF)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Type",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF8E8E93)
+                                    )
+                                }
                                 Text(
-                                    text = "Type: $currentType",
+                                    text = currentType,
                                     fontSize = 14.sp,
-                                    color = Color(0xFF8E8E93)
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1D1D1F)
                                 )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Wifi,
+                                        contentDescription = "Auth Method",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = Color(0xFF007AFF)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Auth Method",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF8E8E93)
+                                    )
+                                }
+                                if(isFaceRecognitionEnabled==true)
+                                {
+                                    Text(
+                                        text = "Room Presence + Face Rec",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF1D1D1F)
+                                    )
+                                }
+                                else{
+                                Text(
+                                    text = "Room Presence",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1D1D1F)
+                                )
+                                }
                             }
                         }
                     }
@@ -644,6 +836,7 @@ fun StudentHomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Check Session Button
             Button(
                 onClick = {
                     if (profileData.className.isNotBlank()) {
@@ -671,24 +864,18 @@ fun StudentHomeScreen(
                         // Re-enable auto-scanning when user manually checks session
                         attendanceViewModel.enableAutoScan()
 
-                        // FIXED: Clear ALL overlay and BLE states properly
+                        // Reset states
                         overlayState = OverlayState.NONE
                         overlaySequenceInProgress = false
                         lastDetectedDevice = null
-
-                        // FIXED: Stop any current BLE scanning and reset detection state completely
                         bleViewModel.stopScanning()
                         bleViewModel.resetDeviceFound()
 
-                        // FIXED: Add small delay to ensure BLE state is fully reset
                         kotlinx.coroutines.GlobalScope.launch {
-                            kotlinx.coroutines.delay(200) // Small delay for BLE cleanup
-
-                            // Reset attendance status and session check state
+                            kotlinx.coroutines.delay(200)
                             hasCheckedInitialSession = false
                             attendanceViewModel.resetAttendanceStatus()
 
-                            // Now check session
                             attendanceViewModel.checkActiveSession { result ->
                                 isSessionActive = result.isActive
                                 if (result.session != null) {
@@ -699,7 +886,7 @@ fun StudentHomeScreen(
 
                                     if (result.isActive) {
                                         Timber.d("✅ Session check found active session: $currentSubject in $currentRoom")
-                                        // BLE scanning will start automatically due to the LaunchedEffect
+                                        Timber.d("📝 Attendance status: ${result.message}")
                                     } else {
                                         Timber.d("⚪ Session check found no active session")
                                     }
@@ -716,12 +903,14 @@ fun StudentHomeScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp)
+                    .height(48.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF007AFF)
+                    containerColor = if (isAttendanceCompletedToday) Color(0xFF8E8E93) else Color(0xFF007AFF),
+                    disabledContainerColor = Color(0xFF34C759)
                 ),
-                enabled = !isCheckingSession
+                enabled = !isCheckingSession && !isAttendanceCompletedToday // DISABLE when attendance is completed
             ) {
                 if (isCheckingSession) {
                     CircularProgressIndicator(
@@ -731,336 +920,210 @@ fun StudentHomeScreen(
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Default.Search,
+                        imageVector =if (isAttendanceCompletedToday) Icons.Default.Check else Icons.Default.Refresh,
                         contentDescription = "Check Session",
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Check Session", fontWeight = FontWeight.Medium)
+                Text(
+                    text = if (isAttendanceCompletedToday) "Attendance Already Marked" else "Check for New Session",
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp,
+                    color =  Color.White
+                )
+            }
+
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Detection Progress Section
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.TrendingUp,
+                        contentDescription = "Detection Progress",
+                        modifier = Modifier.size(20.dp),
+                        tint = Color(0xFF007AFF)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Detection Progress",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1D1D1F)
+                    )
+                }
+
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // UPDATED: Current Activity Card - Shows BLE status only when session is active
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+            // Progress Steps
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
+                // Session Active Step
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isSessionActive) Color(0xFF34C759).copy(alpha = 0.1f)
+                                else Color(0xFF8E8E93).copy(alpha = 0.1f)
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Session Active",
+                            modifier = Modifier.size(24.dp),
+                            tint = if (isSessionActive) Color(0xFF34C759) else Color(0xFF8E8E93)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Current Activity",
+                            text = "Session Active",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFF1D1D1F)
                         )
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        Icon(
-                            imageVector = Icons.Default.Schedule,
-                            contentDescription = "Time",
-                            modifier = Modifier.size(20.dp),
-                            tint = Color(0xFF8E8E93)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Session Status
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
                         Text(
-                            text = "📋",
-                            fontSize = 16.sp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = when {
-                                isCheckingSession -> "Session Check: In Progress..."
-                                isSessionActive -> "Session Status: Active"
-                                else -> "Session Status: No Active Session"
-                            },
+                            text = if (isSessionActive) "Session active - Attendance marked" else "Waiting for active session",
                             fontSize = 14.sp,
-                            color = if (isSessionActive) Color(0xFF34C759) else Color(0xFF8E8E93),
-                            fontWeight = if (isSessionActive) FontWeight.Medium else FontWeight.Normal
+                            color = Color(0xFF8E8E93)
                         )
-
-                        if (isCheckingSession) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(12.dp),
-                                color = Color(0xFF007AFF),
-                                strokeWidth = 1.5.dp
-                            )
-                        }
                     }
 
-                    // Only show BLE status if session is active
-                    if (isSessionActive) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (isSessionActive) "Completed" else "Pending",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isSessionActive) Color(0xFF34C759) else Color(0xFF8E8E93)
+                    )
+                }
 
-                        // Show attendance status if marked
-                        if (isAttendanceCompletedToday) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "✅",
-                                    fontSize = 16.sp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Attendance Status: Already Marked",
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF34C759),
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "📡",
-                                    fontSize = 16.sp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = when {
-                                        isAttendanceCompletedToday -> "BLE Scanning: Stopped (Attendance Complete)"
-                                        bleState == BleState.IDLE && isSessionActive -> "BLE Scanning: Stopped (Restart needed)"
-                                        else -> "BLE Scanning: Stopped (Attendance Complete)"
-                                    },
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF8E8E93),
-                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                                )
-                            }
-                        } else {
-                            // Bluetooth Detection Status
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "📶",
-                                    fontSize = 16.sp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = when (bleState) {
-                                        BleState.SCANNING -> "Bluetooth Detection: Active"
-                                        BleState.DEVICE_FOUND -> "Device Found: ${bleViewModel.getDetectedRoomName() ?: "Unknown"}"
-                                        BleState.IDLE -> "Bluetooth Detection: Ready"
-                                        else -> "Bluetooth Detection: ${bleState.name}"
-                                    },
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF8E8E93)
-                                )
-
-                                if (bleState == BleState.SCANNING) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(12.dp),
-                                        color = Color(0xFF007AFF),
-                                        strokeWidth = 1.5.dp
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Room Detection Status
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "🔍",
-                                    fontSize = 16.sp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = when {
-                                        deviceFound -> "Room Detection: Found (${bleViewModel.getDetectedRoomName()})"
-                                        bleState == BleState.SCANNING -> "Room Detection: Searching..."
-                                        else -> "Room Detection: Waiting for proximity"
-                                    },
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF8E8E93)
-                                )
-                            }
-
-                            // Subject Code Detection Status (only if detected)
-                            if (detectedSubjectCode != null) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "📚",
-                                        fontSize = 16.sp
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Subject Detected: $detectedSubjectCode",
-                                        fontSize = 14.sp,
-                                        color = if (detectedSubjectCode.equals(currentSubject, ignoreCase = true)) {
-                                            Color(0xFF34C759) // Green if matches
-                                        } else {
-                                            Color(0xFFFF9500) // Orange if different
-                                        },
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        // Show message when no session is active
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "💤",
-                                fontSize = 16.sp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Waiting for active session to start BLE scanning",
-                                fontSize = 14.sp,
-                                color = Color(0xFF8E8E93),
-                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                            )
-                        }
+                // Presence Detection Step
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (deviceFound || isAttendanceCompletedToday) Color(0xFF34C759).copy(alpha = 0.1f)
+                                else Color(0xFF8E8E93).copy(alpha = 0.1f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Wifi,
+                            contentDescription = "Presence Detection",
+                            modifier = Modifier.size(24.dp),
+                            tint = if (deviceFound || isAttendanceCompletedToday) Color(0xFF34C759) else Color(0xFF8E8E93)
+                        )
                     }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Presence Detection",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF1D1D1F)
+                        )
+                        Text(
+                            text = if (isAttendanceCompletedToday) "Presence was detected successfully"
+                            else if (deviceFound) "Device detected in ${bleViewModel.getDetectedRoomName()}"
+                            else if (bleState == BleState.SCANNING) "Scanning for room devices..."
+                            else "Waiting for room proximity",
+                            fontSize = 14.sp,
+                            color = Color(0xFF8E8E93)
+                        )
+                    }
+
+                    Text(
+                        text = if (deviceFound || isAttendanceCompletedToday) "Completed" else "Pending",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (deviceFound || isAttendanceCompletedToday) Color(0xFF34C759) else Color(0xFF8E8E93)
+                    )
+                }
+
+                // Attendance Confirmation Step
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isAttendanceCompletedToday) Color(0xFF34C759).copy(alpha = 0.1f)
+                                else Color(0xFF8E8E93).copy(alpha = 0.1f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Attendance Confirmation",
+                            modifier = Modifier.size(24.dp),
+                            tint = if (isAttendanceCompletedToday) Color(0xFF34C759) else Color(0xFF8E8E93)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Attendance Confirmation",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF1D1D1F)
+                        )
+                        Text(
+                            text = if (isAttendanceCompletedToday) "Attendance marked successfully"
+                            else "Waiting for confirmation",
+                            fontSize = 14.sp,
+                            color = Color(0xFF8E8E93)
+                        )
+                    }
+
+                    Text(
+                        text = if (isAttendanceCompletedToday) "Completed" else "Pending",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isAttendanceCompletedToday) Color(0xFF34C759) else Color(0xFF8E8E93)
+                    )
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-
-
-// Replace the existing Recent Attendance Card content with this:
-// Recent Attendance Card
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp)
-                        ) {
-                            // Header Row (keep this same)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Recent Attendance",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF1D1D1F)
-                                )
-
-                                Spacer(modifier = Modifier.weight(1f))
-
-                                IconButton(
-                                    onClick = {
-                                        if (profileData.rollNumber.isNotBlank()) {
-                                            Timber.d("🔄 Manual refresh of attendance history")
-                                            attendanceViewModel.loadAttendanceHistory()
-                                        }
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Refresh",
-                                        modifier = Modifier.size(20.dp),
-                                        tint = Color(0xFF8E8E93)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            // REPLACE the existing if-else block with this LazyColumn implementation:
-                            if (attendanceHistory.isEmpty()) {
-                                Text(
-                                    text = "No recent attendance records",
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF8E8E93),
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } else {
-                                // LazyColumn for scrollable attendance history
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(200.dp), // Set fixed height for scrollable area
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(attendanceHistory) { record ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "✅",
-                                                fontSize = 16.sp
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = record.subject,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = Color(0xFF1D1D1F)
-                                                )
-                                                Text(
-                                                    text = "${record.type.uppercase()} • ${record.getFormattedTime()}",
-                                                    fontSize = 12.sp,
-                                                    color = Color(0xFF8E8E93)
-                                                )
-                                            }
-
-                                            Icon(
-                                                imageVector = Icons.Default.ChevronRight,
-                                                contentDescription = "Details",
-                                                modifier = Modifier.size(16.dp),
-                                                tint = Color(0xFF8E8E93)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
 
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+
+
     Log.d("StudentHomeScreen","Current Room: $currentRoom")
     attendanceViewModel.deviceRoom=currentRoom
 
@@ -1084,6 +1147,9 @@ fun StudentHomeScreen(
             overlayState = OverlayState.NONE
             overlaySequenceInProgress = false
             lastDetectedDevice = null
+
+            attendanceViewModel.disableAutoScan()
+
 
             // Navigate immediately without delay
             onAttendanceClick()
@@ -1112,7 +1178,5 @@ fun StudentHomeScreen(
             }
         }
     }
-
-    // Helper function for requesting Bluetooth permissions
 
 }
